@@ -702,7 +702,7 @@ public final class StorageService implements AutoCloseable {
                 uncertain);
     }
 
-    private void migrate() throws SQLException {
+    private void migrate() throws SQLException, IOException {
         int version;
         try (Statement statement = connection.createStatement(); ResultSet result = statement.executeQuery("PRAGMA user_version")) {
             version = result.next() ? result.getInt(1) : 0;

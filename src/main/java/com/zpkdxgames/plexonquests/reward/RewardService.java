@@ -224,7 +224,7 @@ public final class RewardService {
                 && !canFit(player, items)) {
             return Preflight.failure("claims.inventory-full", "inventory");
         }
-        return Preflight.success();
+        return Preflight.ok();
     }
 
     private DeliveryResult deliver(Player player, DeliveryPlan plan) {
@@ -379,7 +379,7 @@ public final class RewardService {
     }
 
     private record Preflight(boolean success, String messagePath, String detail) {
-        private static Preflight success() { return new Preflight(true, "", ""); }
+        private static Preflight ok() { return new Preflight(true, "", ""); }
 
         private static Preflight failure(String messagePath, String detail) {
             return new Preflight(false, messagePath, detail == null ? "unknown" : detail);
@@ -388,4 +388,3 @@ public final class RewardService {
 
     private record DeliveryResult(boolean success, boolean sideEffectOccurred, String detail) {}
 }
-

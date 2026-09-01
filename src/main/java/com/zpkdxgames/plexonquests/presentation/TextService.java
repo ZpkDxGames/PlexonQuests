@@ -57,7 +57,7 @@ public final class TextService {
         });
         components.forEach((key, value) -> resolvers.add(Placeholder.component(key, value == null ? Component.empty() : value)));
         if (player != null && placeholderApiAvailable()) {
-            resolvers.add(TagResolver.resolver("papi", arguments -> {
+            resolvers.add(TagResolver.resolver("papi", (arguments, context) -> {
                 String identifier = arguments.popOr("Expected a PlaceholderAPI identifier").value();
                 return Tag.inserting(Component.text(applyPlaceholderApi(player, "%" + identifier + "%")));
             }));
