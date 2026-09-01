@@ -1,0 +1,23 @@
+schema-version: 1
+id: first-steps
+revision: 1
+enabled: true
+scope: MILESTONE
+category: progression
+rarity: COMMON
+weight: 1
+eligibility: {required-permission: "", blocked-permissions: [], rank-categories: [], worlds: [], required-integrations: []}
+display:
+  icon: {material: BOOK, amount: 1, glow-when-complete: true}
+  name: "<green><bold>First Steps</bold>"
+  short-description: "Claim your first quest reward."
+completion-mode: ALL
+claim-mode: MANUAL
+objectives:
+  claims: {type: QUESTS_CLAIMED, amount: 1, display: "Quests claimed", filters: {}}
+rewards:
+  mode: ALL
+  entries:
+    experience: {type: EXPERIENCE_POINTS, amount: 100, display: "<aqua>100 experience points"}
+effects: {use-rarity-defaults: true, claim: quest-claim}
+

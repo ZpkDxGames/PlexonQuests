@@ -1,0 +1,64 @@
+schema-version: 1
+
+presets:
+  quest-progress:
+    actionbar: "<gray><quest_name> <progress_bar> <progress_color><current></progress_color><dark_gray>/</dark_gray><white><required>"
+  quest-objective-complete:
+    sound:
+      key: BLOCK_NOTE_BLOCK_PLING
+      volume: 0.55
+      pitch: 1.45
+    actionbar: "<green>Objective complete <dark_gray>•</dark_gray> <white><objective>"
+  quest-complete-common:
+    sound: {key: UI_TOAST_CHALLENGE_COMPLETE, volume: 0.7, pitch: 1.0}
+    title:
+      title: "<green><bold>QUEST COMPLETE</bold>"
+      subtitle: "<gray><quest_name>"
+      fade-in: 5
+      stay: 30
+      fade-out: 10
+    bossbar:
+      text: "<green><bold>Complete!</bold> <white><quest_name>"
+      color: GREEN
+      overlay: PROGRESS
+      duration: 4s
+    particles: {type: HAPPY_VILLAGER, count: 8, spread: 0.45}
+  quest-complete-uncommon:
+    inherit: quest-complete-common
+    particles: {type: HAPPY_VILLAGER, count: 10, spread: 0.5}
+  quest-complete-rare:
+    inherit: quest-complete-common
+    sound: {key: UI_TOAST_CHALLENGE_COMPLETE, volume: 0.8, pitch: 1.15}
+    title:
+      title: "<gradient:#56B9F2:#92E1FF><bold>QUEST COMPLETE</bold></gradient>"
+      subtitle: "<gray><quest_name>"
+      fade-in: 5
+      stay: 35
+      fade-out: 10
+    particles: {type: HAPPY_VILLAGER, count: 14, spread: 0.65}
+  quest-complete-epic:
+    inherit: quest-complete-rare
+    title:
+      title: "<gradient:#C850C0:#FF7EB3><bold>EPIC COMPLETE</bold></gradient>"
+      subtitle: "<gray><quest_name>"
+      fade-in: 5
+      stay: 40
+      fade-out: 12
+    particles: {type: END_ROD, count: 16, spread: 0.7}
+  quest-complete-legendary:
+    inherit: quest-complete-epic
+    sound: {key: UI_TOAST_CHALLENGE_COMPLETE, volume: 0.9, pitch: 1.25}
+    title:
+      title: "<gradient:#FFD166:#FF8C42><bold>LEGENDARY COMPLETE</bold></gradient>"
+      subtitle: "<gray><quest_name>"
+      fade-in: 5
+      stay: 45
+      fade-out: 15
+    particles: {type: TOTEM_OF_UNDYING, count: 18, spread: 0.75}
+  quest-claim:
+    sound: {key: ENTITY_PLAYER_LEVELUP, volume: 0.8, pitch: 1.25}
+    actionbar: "<green>Rewards claimed for <white><quest_name><green>."
+  quest-reroll:
+    sound: {key: ITEM_BOOK_PAGE_TURN, volume: 0.7, pitch: 1.1}
+    particles: {type: ENCHANT, count: 10, spread: 0.45}
+

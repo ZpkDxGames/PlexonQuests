@@ -1,0 +1,24 @@
+schema-version: 1
+id: community-merchant
+revision: 1
+enabled: true
+scope: WEEKLY
+category: social
+rarity: RARE
+weight: 6
+eligibility: {required-permission: "", blocked-permissions: [], rank-categories: [], worlds: [], required-integrations: [PLEXON_SHOPS]}
+display:
+  icon: {material: EMERALD, amount: 1, glow-when-complete: true}
+  name: "<gradient:#72F1B8:#56B9F2><bold>Community Merchant</bold></gradient>"
+  short-description: "Visit and rate player shops through PlexonShops."
+completion-mode: ALL
+claim-mode: MANUAL
+objectives:
+  visits: {type: PLEXON_SHOP_VISIT, amount: 12, display: "Completed shop visits", filters: {unique-only: true}}
+  ratings: {type: PLEXON_SHOP_RATE, amount: 3, display: "Committed ratings", filters: {}}
+rewards:
+  mode: ALL
+  entries:
+    experience: {type: EXPERIENCE_POINTS, amount: 1000, display: "<aqua>1,000 experience points"}
+effects: {use-rarity-defaults: true, claim: quest-claim}
+

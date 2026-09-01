@@ -1,0 +1,23 @@
+schema-version: 1
+id: quest-legend
+revision: 1
+enabled: true
+scope: MILESTONE
+category: progression
+rarity: LEGENDARY
+weight: 1
+eligibility: {required-permission: "", blocked-permissions: [], rank-categories: [], worlds: [], required-integrations: []}
+display:
+  icon: {material: NETHER_STAR, amount: 1, glow-when-complete: true}
+  name: "<gradient:#FFD166:#FF8C42><bold>Quest Legend</bold></gradient>"
+  short-description: "Claim five hundred quest rewards."
+completion-mode: ALL
+claim-mode: MANUAL
+objectives:
+  claims: {type: QUESTS_CLAIMED, amount: 500, display: "Quests claimed", filters: {}}
+rewards:
+  mode: ALL
+  entries:
+    experience: {type: EXPERIENCE_POINTS, amount: 15000, display: "<aqua>15,000 experience points"}
+effects: {use-rarity-defaults: true, claim: quest-claim}
+

@@ -1,0 +1,18 @@
+schema-version: 1
+id: weekly
+enabled: true
+scope: WEEKLY
+base-assignments: 2
+prevent-duplicates: true
+recent-history-exclusion: 21d
+mix:
+  guaranteed-categories: []
+  maximum-per-category: 1
+quests:
+  deep-delver: 12
+  master-angler: 9
+  realm-walker: 8
+  hunters-ledger: 10
+  community-merchant: 6
+  tool-forged: 6
+

@@ -1,0 +1,27 @@
+schema-version: 1
+id: anglers-call
+revision: 1
+enabled: true
+scope: DAILY
+category: fishing
+rarity: UNCOMMON
+weight: 8
+eligibility: {required-permission: "", blocked-permissions: [], rank-categories: [], worlds: [], required-integrations: []}
+display:
+  icon: {material: FISHING_ROD, amount: 1, glow-when-complete: true}
+  name: "<gradient:#56B9F2:#72F1B8><bold>Angler's Call</bold></gradient>"
+  short-description: "Land a fresh catch from open water."
+completion-mode: ALL
+claim-mode: MANUAL
+objectives:
+  catches:
+    type: CATCH_FISH
+    amount: 18
+    display: "Successful catches"
+    filters: {caught-materials: [COD, SALMON, PUFFERFISH, TROPICAL_FISH], game-modes: [SURVIVAL]}
+rewards:
+  mode: ALL
+  entries:
+    experience: {type: EXPERIENCE_POINTS, amount: 240, display: "<aqua>240 experience points"}
+effects: {use-rarity-defaults: true, claim: quest-claim}
+

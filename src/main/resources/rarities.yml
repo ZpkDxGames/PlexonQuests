@@ -1,0 +1,39 @@
+schema-version: 1
+
+rarities:
+  COMMON:
+    display: "<white>COMMON"
+    color: "#D8DEE9"
+    icon: PAPER
+    glow: false
+    sort-priority: 10
+    complete-effect: quest-complete-common
+  UNCOMMON:
+    display: "<green>UNCOMMON"
+    color: "#72F1B8"
+    icon: MAP
+    glow: false
+    sort-priority: 20
+    complete-effect: quest-complete-uncommon
+  RARE:
+    display: "<gradient:#56B9F2:#92E1FF>RARE</gradient>"
+    color: "#56B9F2"
+    icon: AMETHYST_SHARD
+    glow: true
+    sort-priority: 30
+    complete-effect: quest-complete-rare
+  EPIC:
+    display: "<gradient:#C850C0:#FF7EB3>EPIC</gradient>"
+    color: "#C850C0"
+    icon: ECHO_SHARD
+    glow: true
+    sort-priority: 40
+    complete-effect: quest-complete-epic
+  LEGENDARY:
+    display: "<gradient:#FFD166:#FF8C42>LEGENDARY</gradient>"
+    color: "#FFD166"
+    icon: NETHER_STAR
+    glow: true
+    sort-priority: 50
+    complete-effect: quest-complete-legendary
+

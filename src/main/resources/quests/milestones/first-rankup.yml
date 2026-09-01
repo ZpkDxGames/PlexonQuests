@@ -1,0 +1,23 @@
+schema-version: 1
+id: first-rankup
+revision: 1
+enabled: true
+scope: MILESTONE
+category: ranks
+rarity: UNCOMMON
+weight: 1
+eligibility: {required-permission: "", blocked-permissions: [], rank-categories: [], worlds: [], required-integrations: [PLEXON_RANKS]}
+display:
+  icon: {material: NAME_TAG, amount: 1, glow-when-complete: true}
+  name: "<gradient:#72F1B8:#92E1FF><bold>Moving Up</bold></gradient>"
+  short-description: "Advance through PlexonRanks for the first time."
+completion-mode: ALL
+claim-mode: MANUAL
+objectives:
+  rankups: {type: PLEXON_RANK_UP, amount: 1, display: "Rank advancements", filters: {}}
+rewards:
+  mode: ALL
+  entries:
+    experience: {type: EXPERIENCE_POINTS, amount: 500, display: "<aqua>500 experience points"}
+effects: {use-rarity-defaults: true, claim: quest-claim}
+

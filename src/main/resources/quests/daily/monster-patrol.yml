@@ -1,0 +1,30 @@
+schema-version: 1
+id: monster-patrol
+revision: 1
+enabled: true
+scope: DAILY
+category: combat
+rarity: RARE
+weight: 9
+eligibility: {required-permission: "", blocked-permissions: [], rank-categories: [], worlds: [], required-integrations: []}
+display:
+  icon: {material: IRON_SWORD, amount: 1, glow-when-complete: true}
+  name: "<gradient:#FF6B6B:#FF9F43><bold>Monster Patrol</bold></gradient>"
+  short-description: "Defeat hostile creatures found in the wild."
+completion-mode: ALL
+claim-mode: MANUAL
+objectives:
+  hostiles:
+    type: KILL_ENTITY
+    amount: 45
+    display: "Naturally spawned hostiles"
+    filters:
+      entities: [ZOMBIE, SKELETON, SPIDER, CREEPER, DROWNED, HUSK, STRAY, WITCH, ENDERMAN]
+      spawn-reasons: [NATURAL, REINFORCEMENTS, PATROL, RAID, JOCKEY]
+      game-modes: [SURVIVAL]
+rewards:
+  mode: ALL
+  entries:
+    experience: {type: EXPERIENCE_POINTS, amount: 400, display: "<aqua>400 experience points"}
+effects: {use-rarity-defaults: true, claim: quest-claim}
+

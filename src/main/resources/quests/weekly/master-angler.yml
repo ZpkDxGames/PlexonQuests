@@ -1,0 +1,25 @@
+schema-version: 1
+id: master-angler
+revision: 1
+enabled: true
+scope: WEEKLY
+category: fishing
+rarity: RARE
+weight: 9
+eligibility: {required-permission: "", blocked-permissions: [], rank-categories: [], worlds: [], required-integrations: []}
+display:
+  icon: {material: NAUTILUS_SHELL, amount: 1, glow-when-complete: true}
+  name: "<gradient:#56B9F2:#72F1B8><bold>Master Angler</bold></gradient>"
+  short-description: "Build a varied catch ledger."
+completion-mode: ALL
+claim-mode: MANUAL
+objectives:
+  cod: {type: CATCH_FISH, amount: 32, display: "Cod", filters: {caught-materials: [COD], game-modes: [SURVIVAL]}}
+  salmon: {type: CATCH_FISH, amount: 20, display: "Salmon", filters: {caught-materials: [SALMON], game-modes: [SURVIVAL]}}
+  exotic: {type: CATCH_FISH, amount: 8, display: "Exotic fish", filters: {caught-materials: [PUFFERFISH, TROPICAL_FISH], game-modes: [SURVIVAL]}}
+rewards:
+  mode: ALL
+  entries:
+    experience: {type: EXPERIENCE_POINTS, amount: 1100, display: "<aqua>1,100 experience points"}
+effects: {use-rarity-defaults: true, claim: quest-claim}
+

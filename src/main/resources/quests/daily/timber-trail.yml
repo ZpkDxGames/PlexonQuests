@@ -1,0 +1,30 @@
+schema-version: 1
+id: timber-trail
+revision: 1
+enabled: true
+scope: DAILY
+category: gathering
+rarity: UNCOMMON
+weight: 12
+eligibility: {required-permission: "", blocked-permissions: [], rank-categories: [], worlds: [], required-integrations: []}
+display:
+  icon: {material: IRON_AXE, amount: 1, glow-when-complete: true}
+  name: "<gradient:#72F1B8:#B8F2A1><bold>Timber Trail</bold></gradient>"
+  short-description: "Gather naturally generated logs."
+completion-mode: ALL
+claim-mode: MANUAL
+objectives:
+  natural_logs:
+    type: BREAK_BLOCK
+    amount: 256
+    display: "Natural logs"
+    filters:
+      materials: [OAK_LOG, SPRUCE_LOG, BIRCH_LOG, JUNGLE_LOG, ACACIA_LOG, DARK_OAK_LOG, MANGROVE_LOG, CHERRY_LOG, PALE_OAK_LOG]
+      origin: NATURAL_ONLY
+      game-modes: [SURVIVAL]
+rewards:
+  mode: ALL
+  entries:
+    experience: {type: EXPERIENCE_POINTS, amount: 220, display: "<aqua>220 experience points"}
+effects: {use-rarity-defaults: true, claim: quest-claim}
+

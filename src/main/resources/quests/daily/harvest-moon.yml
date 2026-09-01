@@ -1,0 +1,27 @@
+schema-version: 1
+id: harvest-moon
+revision: 1
+enabled: true
+scope: DAILY
+category: farming
+rarity: COMMON
+weight: 10
+eligibility: {required-permission: "", blocked-permissions: [], rank-categories: [], worlds: [], required-integrations: []}
+display:
+  icon: {material: GOLDEN_HOE, amount: 1, glow-when-complete: true}
+  name: "<gradient:#FFD166:#72F1B8><bold>Harvest Moon</bold></gradient>"
+  short-description: "Harvest fully grown field crops."
+completion-mode: ALL
+claim-mode: MANUAL
+objectives:
+  mature_crops:
+    type: HARVEST_CROP
+    amount: 192
+    display: "Mature crops"
+    filters: {materials: [WHEAT, CARROTS, POTATOES, BEETROOTS, NETHER_WART], mature-only: true, game-modes: [SURVIVAL]}
+rewards:
+  mode: ALL
+  entries:
+    experience: {type: EXPERIENCE_POINTS, amount: 180, display: "<aqua>180 experience points"}
+effects: {use-rarity-defaults: true, claim: quest-claim}
+

@@ -1,0 +1,26 @@
+schema-version: 1
+id: realm-walker
+revision: 1
+enabled: true
+scope: WEEKLY
+category: exploration
+rarity: EPIC
+weight: 8
+eligibility: {required-permission: "", blocked-permissions: [], rank-categories: [], worlds: [], required-integrations: []}
+display:
+  icon: {material: ENDER_EYE, amount: 1, glow-when-complete: true}
+  name: "<gradient:#C850C0:#FF7EB3><bold>Realm Walker</bold></gradient>"
+  short-description: "Cross dimensions and complete each step in order."
+completion-mode: SEQUENCE
+claim-mode: MANUAL
+objectives:
+  enter_nether: {type: VISIT_WORLD, amount: 1, display: "Enter the Nether", filters: {world-environments: [NETHER], game-modes: [SURVIVAL]}}
+  nether_activity: {type: BREAK_BLOCK, amount: 512, display: "Mine in the Nether", filters: {materials: [NETHERRACK, BLACKSTONE, BASALT], world-environments: [NETHER], origin: NATURAL_ONLY, game-modes: [SURVIVAL]}}
+  enter_end: {type: VISIT_WORLD, amount: 1, display: "Enter the End", filters: {world-environments: [THE_END], game-modes: [SURVIVAL]}}
+rewards:
+  mode: ALL
+  entries:
+    experience: {type: EXPERIENCE_POINTS, amount: 1500, display: "<aqua>1,500 experience points"}
+    pearls: {type: ITEM, material: ENDER_PEARL, amount: 8, display: "<light_purple>8 Ender Pearls"}
+effects: {use-rarity-defaults: true, claim: quest-claim}
+

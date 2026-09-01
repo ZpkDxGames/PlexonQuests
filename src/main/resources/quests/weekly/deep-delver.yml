@@ -1,0 +1,25 @@
+schema-version: 1
+id: deep-delver
+revision: 1
+enabled: true
+scope: WEEKLY
+category: mining
+rarity: EPIC
+weight: 12
+eligibility: {required-permission: "", blocked-permissions: [], rank-categories: [], worlds: [], required-integrations: []}
+display:
+  icon: {material: NETHERITE_PICKAXE, amount: 1, glow-when-complete: true}
+  name: "<gradient:#C850C0:#56B9F2><bold>Deep Delver</bold></gradient>"
+  short-description: "Excavate a broad range of natural deep stone."
+completion-mode: ALL
+claim-mode: MANUAL
+objectives:
+  stone: {type: BREAK_BLOCK, amount: 2500, display: "Natural stone", filters: {materials: [STONE, DEEPSLATE, TUFF], origin: NATURAL_ONLY, game-modes: [SURVIVAL]}}
+  ores: {type: BREAK_BLOCK, amount: 180, display: "Natural ores", filters: {materials: [COAL_ORE, DEEPSLATE_COAL_ORE, IRON_ORE, DEEPSLATE_IRON_ORE, COPPER_ORE, DEEPSLATE_COPPER_ORE, GOLD_ORE, DEEPSLATE_GOLD_ORE, REDSTONE_ORE, DEEPSLATE_REDSTONE_ORE, LAPIS_ORE, DEEPSLATE_LAPIS_ORE, DIAMOND_ORE, DEEPSLATE_DIAMOND_ORE, EMERALD_ORE, DEEPSLATE_EMERALD_ORE], origin: NATURAL_ONLY, game-modes: [SURVIVAL]}}
+rewards:
+  mode: ALL
+  entries:
+    experience: {type: EXPERIENCE_POINTS, amount: 1600, display: "<aqua>1,600 experience points"}
+    diamonds: {type: ITEM, material: DIAMOND, amount: 4, display: "<aqua>4 Diamonds"}
+effects: {use-rarity-defaults: true, claim: quest-claim}
+

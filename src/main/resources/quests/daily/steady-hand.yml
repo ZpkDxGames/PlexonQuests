@@ -1,0 +1,24 @@
+schema-version: 1
+id: steady-hand
+revision: 1
+enabled: true
+scope: DAILY
+category: combat
+rarity: UNCOMMON
+weight: 9
+eligibility: {required-permission: "", blocked-permissions: [], rank-categories: [], worlds: [], required-integrations: []}
+display:
+  icon: {material: BOW, amount: 1, glow-when-complete: true}
+  name: "<gradient:#FF7EB3:#92E1FF><bold>Steady Hand</bold></gradient>"
+  short-description: "Deal measured damage to hostile creatures."
+completion-mode: ANY
+claim-mode: MANUAL
+objectives:
+  melee: {type: DAMAGE_ENTITY, amount: 500, display: "Melee damage", filters: {damage-causes: [ENTITY_ATTACK, ENTITY_SWEEP_ATTACK], hostile-only: true, game-modes: [SURVIVAL]}}
+  ranged: {type: DAMAGE_ENTITY, amount: 500, display: "Ranged damage", filters: {damage-causes: [PROJECTILE], hostile-only: true, game-modes: [SURVIVAL]}}
+rewards:
+  mode: ALL
+  entries:
+    experience: {type: EXPERIENCE_POINTS, amount: 260, display: "<aqua>260 experience points"}
+effects: {use-rarity-defaults: true, claim: quest-claim}
+

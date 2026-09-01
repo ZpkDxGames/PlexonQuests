@@ -1,0 +1,25 @@
+schema-version: 1
+id: artisan-hours
+revision: 1
+enabled: true
+scope: DAILY
+category: crafting
+rarity: UNCOMMON
+weight: 10
+eligibility: {required-permission: "", blocked-permissions: [], rank-categories: [], worlds: [], required-integrations: []}
+display:
+  icon: {material: CRAFTING_TABLE, amount: 1, glow-when-complete: true}
+  name: "<gradient:#FFD166:#FF9F43><bold>Artisan Hours</bold></gradient>"
+  short-description: "Craft useful supplies for the next expedition."
+completion-mode: ALL
+claim-mode: MANUAL
+objectives:
+  torches: {type: CRAFT_ITEM, amount: 64, display: "Torches", filters: {materials: [TORCH], game-modes: [SURVIVAL]}}
+  chests: {type: CRAFT_ITEM, amount: 8, display: "Chests", filters: {materials: [CHEST], game-modes: [SURVIVAL]}}
+  rails: {type: CRAFT_ITEM, amount: 32, display: "Rails", filters: {materials: [RAIL], game-modes: [SURVIVAL]}}
+rewards:
+  mode: ALL
+  entries:
+    experience: {type: EXPERIENCE_POINTS, amount: 260, display: "<aqua>260 experience points"}
+effects: {use-rarity-defaults: true, claim: quest-claim}
+

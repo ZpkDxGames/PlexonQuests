@@ -1,0 +1,89 @@
+name: PlexonQuests
+version: '${project.version}'
+main: com.zpkdxgames.plexonquests.PlexonQuestsPlugin
+description: GUI-first, performance-minded quests and challenges for Paper.
+api-version: '26.2'
+load: POSTWORLD
+author: Tonim (ZpkDxGames)
+website: https://github.com/ZpkDxGames/PlexonQuests
+softdepend:
+  - PlaceholderAPI
+  - Vault
+  - LuckPerms
+  - PlexonRanks
+  - PlexonTools
+  - PlexonKeys
+  - PlexonCrates
+  - PlexonShops
+  - PlexonDailyRewards
+  - PlexonChats
+
+commands:
+  quests:
+    description: Open and manage your quest journal.
+    usage: /quests [daily|weekly|milestones|history|settings|info]
+    aliases: [quest, pquests, plexonquests]
+
+permissions:
+  plexonquests.use:
+    description: Open and browse the quest journal.
+    default: true
+  plexonquests.pin:
+    description: Pin and unpin quests.
+    default: true
+  plexonquests.history:
+    description: Browse personal quest history.
+    default: true
+  plexonquests.claim:
+    description: Claim completed quest rewards.
+    default: true
+  plexonquests.reroll:
+    description: Reroll eligible rotating quests.
+    default: true
+  plexonquests.settings:
+    description: Change personal quest feedback settings.
+    default: true
+  plexonquests.admin:
+    description: Grants PlexonQuests administrative capabilities.
+    default: op
+    children:
+      plexonquests.admin.gui: true
+      plexonquests.admin.reload: true
+      plexonquests.admin.validate: true
+      plexonquests.admin.assign: true
+      plexonquests.admin.cancel: true
+      plexonquests.admin.progress: true
+      plexonquests.admin.complete: true
+      plexonquests.admin.reset: true
+      plexonquests.admin.rotate: true
+      plexonquests.admin.save: true
+      plexonquests.admin.diagnostics: true
+  plexonquests.admin.gui:
+    default: op
+  plexonquests.admin.reload:
+    default: op
+  plexonquests.admin.validate:
+    default: op
+  plexonquests.admin.assign:
+    default: op
+  plexonquests.admin.cancel:
+    default: op
+  plexonquests.admin.progress:
+    default: op
+  plexonquests.admin.complete:
+    default: op
+  plexonquests.admin.reset:
+    default: op
+  plexonquests.admin.rotate:
+    default: op
+  plexonquests.admin.save:
+    default: op
+  plexonquests.admin.diagnostics:
+    default: op
+  plexonquests.bypass.eligibility:
+    default: false
+  plexonquests.bypass.reroll-cost:
+    default: false
+  plexonquests.bypass.slot-limit:
+    default: false
+

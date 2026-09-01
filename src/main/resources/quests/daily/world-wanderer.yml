@@ -1,0 +1,27 @@
+schema-version: 1
+id: world-wanderer
+revision: 1
+enabled: true
+scope: DAILY
+category: exploration
+rarity: COMMON
+weight: 8
+eligibility: {required-permission: "", blocked-permissions: [], rank-categories: [], worlds: [], required-integrations: []}
+display:
+  icon: {material: COMPASS, amount: 1, glow-when-complete: true}
+  name: "<gradient:#92E1FF:#72F1B8><bold>World Wanderer</bold></gradient>"
+  short-description: "Travel on foot without teleport shortcuts."
+completion-mode: ALL
+claim-mode: MANUAL
+objectives:
+  distance:
+    type: TRAVEL_DISTANCE
+    amount: 5000
+    display: "Blocks travelled"
+    filters: {movement-types: [WALK, SPRINT, SWIM], exclude-teleports: true, game-modes: [SURVIVAL]}
+rewards:
+  mode: ALL
+  entries:
+    experience: {type: EXPERIENCE_POINTS, amount: 180, display: "<aqua>180 experience points"}
+effects: {use-rarity-defaults: true, claim: quest-claim}
+

@@ -1,0 +1,31 @@
+schema-version: 1
+id: stonebound
+revision: 1
+enabled: true
+scope: DAILY
+category: mining
+rarity: RARE
+weight: 12
+eligibility: {required-permission: "", blocked-permissions: [], rank-categories: [], worlds: [], required-integrations: []}
+display:
+  icon: {material: DIAMOND_PICKAXE, amount: 1, glow-when-complete: true}
+  name: "<gradient:#56B9F2:#92E1FF><bold>Stonebound</bold></gradient>"
+  short-description: "Break stone that players have not placed."
+completion-mode: ALL
+claim-mode: MANUAL
+objectives:
+  natural_stone:
+    type: BREAK_BLOCK
+    amount: 750
+    display: "Natural stone"
+    filters:
+      materials: [STONE, DEEPSLATE, TUFF]
+      origin: NATURAL_ONLY
+      worlds: []
+      game-modes: [SURVIVAL]
+rewards:
+  mode: ALL
+  entries:
+    experience: {type: EXPERIENCE_POINTS, amount: 350, display: "<aqua>350 experience points"}
+effects: {use-rarity-defaults: true, complete: quest-complete-rare, claim: quest-claim}
+

@@ -1,0 +1,20 @@
+schema-version: 1
+id: daily
+enabled: true
+scope: DAILY
+base-assignments: 3
+prevent-duplicates: true
+recent-history-exclusion: 7d
+mix:
+  guaranteed-categories: [gathering]
+  maximum-per-category: 2
+quests:
+  stonebound: 12
+  timber-trail: 12
+  anglers-call: 8
+  harvest-moon: 10
+  monster-patrol: 9
+  artisan-hours: 10
+  world-wanderer: 8
+  steady-hand: 9
+

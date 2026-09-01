@@ -1,0 +1,25 @@
+schema-version: 1
+id: hunters-ledger
+revision: 1
+enabled: true
+scope: WEEKLY
+category: combat
+rarity: RARE
+weight: 10
+eligibility: {required-permission: "", blocked-permissions: [], rank-categories: [], worlds: [], required-integrations: []}
+display:
+  icon: {material: CROSSBOW, amount: 1, glow-when-complete: true}
+  name: "<gradient:#FF6B6B:#FFD166><bold>Hunter's Ledger</bold></gradient>"
+  short-description: "Complete several hostile-creature quotas."
+completion-mode: ALL
+claim-mode: MANUAL
+objectives:
+  undead: {type: KILL_ENTITY, amount: 120, display: "Undead", filters: {entities: [ZOMBIE, SKELETON, DROWNED, HUSK, STRAY, WITHER_SKELETON], spawn-reasons: [NATURAL, REINFORCEMENTS, PATROL, RAID, JOCKEY], game-modes: [SURVIVAL]}}
+  creepers: {type: KILL_ENTITY, amount: 35, display: "Creepers", filters: {entities: [CREEPER], spawn-reasons: [NATURAL], game-modes: [SURVIVAL]}}
+  endermen: {type: KILL_ENTITY, amount: 20, display: "Endermen", filters: {entities: [ENDERMAN], spawn-reasons: [NATURAL], game-modes: [SURVIVAL]}}
+rewards:
+  mode: ALL
+  entries:
+    experience: {type: EXPERIENCE_POINTS, amount: 1400, display: "<aqua>1,400 experience points"}
+effects: {use-rarity-defaults: true, claim: quest-claim}
+

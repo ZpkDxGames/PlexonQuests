@@ -1,0 +1,23 @@
+schema-version: 1
+id: quest-veteran
+revision: 1
+enabled: true
+scope: MILESTONE
+category: progression
+rarity: RARE
+weight: 1
+eligibility: {required-permission: "", blocked-permissions: [], rank-categories: [], worlds: [], required-integrations: []}
+display:
+  icon: {material: EXPERIENCE_BOTTLE, amount: 1, glow-when-complete: true}
+  name: "<gradient:#56B9F2:#92E1FF><bold>Quest Veteran</bold></gradient>"
+  short-description: "Claim fifty quest rewards."
+completion-mode: ALL
+claim-mode: MANUAL
+objectives:
+  claims: {type: QUESTS_CLAIMED, amount: 50, display: "Quests claimed", filters: {}}
+rewards:
+  mode: ALL
+  entries:
+    experience: {type: EXPERIENCE_POINTS, amount: 2500, display: "<aqua>2,500 experience points"}
+effects: {use-rarity-defaults: true, claim: quest-claim}
+

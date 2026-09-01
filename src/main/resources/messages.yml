@@ -1,0 +1,63 @@
+schema-version: 1
+
+prefix: "<gradient:#56B9F2:#92E1FF><bold>QUESTS</bold></gradient> <dark_gray>›</dark_gray> "
+
+general:
+  no-permission: "<red>You do not have permission to do that."
+  player-only: "<red>This action is available to players only."
+  player-not-found: "<red>Player <white><player></white> is not online."
+  invalid-usage: "<red>Invalid usage. <gray><usage>"
+  not-ready: "<yellow>Your quest journal is still loading. Try again in a moment."
+  internal-error: "<red>The quest action could not be completed. An administrator can check diagnostics."
+  reload-success: "<green>Configuration reloaded: <white><quests></white> quests and <white><pools></white> pools active."
+  reload-failed: "<red>Reload rejected. The previous configuration remains active. <gray>Use /quests validate for details."
+  save-success: "<green>All dirty quest progress has been checkpointed."
+
+quests:
+  assigned: "<aqua>New <scope> quest: <white><quest_name>"
+  objective-complete: "<green>Objective complete: <white><objective>"
+  complete: "<green><bold>Quest complete!</bold> <white><quest_name> <gray>Open /quests to claim it."
+  expired: "<red>Quest expired: <white><quest_name>"
+  pinned: "<aqua>Pinned <white><quest_name></white>."
+  unpinned: "<gray>Unpinned <white><quest_name></white>."
+  pin-limit: "<yellow>You can pin up to <white><limit></white> quest(s)."
+  unavailable: "<red>This quest is unavailable: <gray><reason>"
+  not-found: "<red>No accessible quest was found for that slot or identifier."
+
+claims:
+  preparing: "<gray>Securing your reward transaction…"
+  success: "<green>Rewards claimed for <white><quest_name></white>."
+  not-complete: "<yellow>That quest is not ready to claim."
+  already-claimed: "<yellow>Those rewards were already claimed."
+  inventory-full: "<yellow>Make enough inventory space before claiming this reward."
+  provider-unavailable: "<red>A reward provider is unavailable: <white><provider></white>."
+  uncertain: "<red>Reward delivery needs administrator review. Transaction <white><transaction></white>."
+
+rerolls:
+  disabled: "<yellow>Quest rerolls are disabled."
+  unavailable: "<yellow>No eligible replacement is currently available. Nothing was consumed."
+  success: "<aqua>Quest rerolled: <white><old_quest></white> <dark_gray>→</dark_gray> <white><new_quest></white>"
+  limit: "<yellow>You have used all rerolls for this period."
+  insufficient-funds: "<red>You need <white><cost></white> to reroll this quest."
+  payment-failed: "<red>The reroll payment failed. Your existing quest was preserved."
+
+admin:
+  assigned: "<green>Assigned <white><quest></white> to <white><player></white>."
+  cancelled: "<yellow>Cancelled assignment <white><assignment></white>."
+  progress: "<green>Progress updated: <white><old></white> <dark_gray>→</dark_gray> <white><new></white>."
+  completed: "<green>Assignment completed through the audited administrator flow."
+  reset: "<yellow>Reset <white><scope></white> assignments for <white><player></white>."
+  rotated: "<green>Rotation completed for <white><scope></white>."
+  validation-header: "<gradient:#56B9F2:#92E1FF><bold>PlexonQuests validation</bold></gradient>"
+  diagnostics-header: "<gradient:#56B9F2:#92E1FF><bold>PlexonQuests diagnostics</bold></gradient>"
+  validation-clean: "<green>No configuration or definition issues were found."
+
+join-reminder: "<aqua>You have <white><active></white> active quests and <green><claimable></green> reward(s) ready. <gray>Use <white>/quests</white>."
+neutral-placeholder: "—"
+
+info:
+  lines:
+    - "<gradient:#56B9F2:#92E1FF><bold>PlexonQuests <version></bold></gradient>"
+    - "<gray>Complete daily, weekly, milestone, and assigned quests through normal play."
+    - "<gray>Open <white>/quests</white>, inspect a card, then claim completed rewards safely."
+    - "<dark_gray>Right-click cards to pin; shift-left-click rotating cards to reroll."

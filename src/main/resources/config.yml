@@ -1,0 +1,108 @@
+schema-version: 1
+
+locale: en_US
+
+rotation:
+  timezone: America/Sao_Paulo
+  daily-reset: "04:00"
+  weekly-reset-day: MONDAY
+  weekly-reset-time: "04:00"
+  completed-claim-grace: 24h
+  recent-history-exclusion: 7d
+
+assignments:
+  base-daily-slots: 3
+  base-weekly-slots: 2
+  maximum-daily-slots: 9
+  maximum-weekly-slots: 5
+  maximum-active-manual: 20
+  allow-one-action-to-progress-multiple-quests: true
+
+rank-progression:
+  enabled: true
+  provider: PLEXON_RANKS
+  fallback-permissions: true
+  bonus-per-category: 1
+  categories:
+    default: 0
+    newbie: 1
+    tinkerer: 2
+    technician: 3
+    inventor: 4
+    skilled: 5
+    pro: 6
+
+rerolls:
+  enabled: true
+  free-daily: 1
+  free-weekly: 1
+  maximum-per-period: 3
+  progress-policy: LOSE_AFTER_CONFIRMATION
+  paid:
+    enabled: false
+    cost: 2500.0
+    provider: VAULT
+
+tracking:
+  creative-counts: false
+  spectator-counts: false
+  natural-block-mode: PERSISTENT_CHUNK
+  natural-block-maximum-positions-per-chunk: 65536
+  travel-sample-ticks: 20
+  travel-maximum-delta: 32.0
+  actionbar-throttle-ticks: 10
+  bossbar-throttle-ticks: 10
+  bossbar-quiet-period: 4s
+  afk-timeout: 5m
+  contribution-cooldown-ms: 0
+
+storage:
+  file: plexonquests.db
+  journal-mode: WAL
+  busy-timeout-ms: 5000
+  flush-interval: 5s
+  checkpoint-interval: 5m
+  queue-capacity: 4096
+  shutdown-timeout: 15s
+  history-retention-days: 180
+  history-maximum-per-player: 500
+
+claims:
+  manual-by-default: true
+  overflow-policy: CANCEL
+  audit-log: true
+  reservation-timeout: 30s
+
+integrations:
+  placeholderapi: AUTO
+  vault: AUTO
+  luckperms: AUTO
+  plexonranks: AUTO
+  plexontools: AUTO
+  plexonkeys: AUTO
+  plexoncrates: AUTO
+  plexonshops: AUTO
+  plexondailyrewards: AUTO
+
+feedback:
+  join-reminder-delay: 40t
+  failure-message-cooldown: 2s
+  pinned-display: AUTO
+  maximum-pinned: 1
+  progress-thresholds: [25, 50, 75, 100]
+
+security:
+  command-cooldown-ms: 250
+  gui-click-cooldown-ms: 120
+  maximum-numbered-permission: 20
+  maximum-serialized-item-bytes: 65536
+
+diagnostics:
+  debug-timing: false
+  timing-sample-rate: 1000
+
+privacy:
+  log-player-uuids: true
+  log-player-names: true
+  expose-database-path-in-player-errors: false
+

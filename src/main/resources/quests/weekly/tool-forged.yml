@@ -1,0 +1,23 @@
+schema-version: 1
+id: tool-forged
+revision: 1
+enabled: true
+scope: WEEKLY
+category: tools
+rarity: EPIC
+weight: 6
+eligibility: {required-permission: "", blocked-permissions: [], rank-categories: [], worlds: [], required-integrations: [PLEXON_TOOLS]}
+display:
+  icon: {material: NETHERITE_PICKAXE, amount: 1, glow-when-complete: true}
+  name: "<gradient:#C850C0:#FFD166><bold>Tool Forged</bold></gradient>"
+  short-description: "Advance a PlexonTools custom tool."
+completion-mode: ALL
+claim-mode: MANUAL
+objectives:
+  levels: {type: PLEXON_TOOL_LEVEL_UP, amount: 2, display: "Tool levels gained", filters: {}}
+rewards:
+  mode: ALL
+  entries:
+    experience: {type: EXPERIENCE_POINTS, amount: 1500, display: "<aqua>1,500 experience points"}
+effects: {use-rarity-defaults: true, claim: quest-claim}
+

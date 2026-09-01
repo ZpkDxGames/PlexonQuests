@@ -1,9 +1,11 @@
 target/
 .idea/
-.vscode/
 *.iml
+.classpath
+.project
+.settings/
 *.log
 *.db
 *.db-shm
 *.db-wal
-.DS_Store
+
