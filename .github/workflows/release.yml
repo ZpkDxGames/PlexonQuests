@@ -36,19 +36,6 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
-      - name: Check out release commit
-        uses: actions/checkout@v5
-        with:
-          ref: 8f768f085b54f9381f3f8be0a24881ddd126fc42
-          fetch-depth: 0
-      - name: Create release tag
-        run: |
-          if git ls-remote --exit-code --tags origin refs/tags/v1.0.0; then
-            echo 'Tag v1.0.0 already exists'
-          else
-            git tag v1.0.0 8f768f085b54f9381f3f8be0a24881ddd126fc42
-            git push origin refs/tags/v1.0.0
-          fi
       - name: Download verified build
         uses: actions/download-artifact@v8
         with:
@@ -71,6 +58,7 @@ jobs:
           target_commitish: 8f768f085b54f9381f3f8be0a24881ddd126fc42
           name: PlexonQuests 1.0.0
           generate_release_notes: true
+          draft: true
           make_latest: true
           fail_on_unmatched_files: true
           files: |
