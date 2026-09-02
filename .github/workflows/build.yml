@@ -43,8 +43,10 @@ jobs:
             jar tf "${jar_path}" > target/jar-contents.txt
             grep -qx 'plugin.yml' target/jar-contents.txt
             grep -qx 'org/sqlite/JDBC.class' target/jar-contents.txt
-            sha256sum "${jar_path}" > target/SHA256SUMS.txt
-            sha256sum --check target/SHA256SUMS.txt
+            jar_name=$(basename "${jar_path}")
+            cd target
+            sha256sum "${jar_name}" > SHA256SUMS.txt
+            sha256sum --check SHA256SUMS.txt
           ) 2>&1 | tee distribution.log
           code=${PIPESTATUS[0]}
           echo "exit_code=${code}" >> "${GITHUB_OUTPUT}"
