@@ -1,0 +1,6 @@
+version: 1.0.0
+tag: v1.0.0
+target-commit: 8f768f085b54f9381f3f8be0a24881ddd126fc42
+source-workflow-run: 33579176251
+source-artifact-id: 9827765900
+source-artifact-name: PlexonQuests-1.0.0
