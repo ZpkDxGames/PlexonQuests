@@ -234,21 +234,33 @@ public final class QuestAssignment {
     }
 
     public synchronized long requiredTotal() {
-        if (definition.completionMode() == CompletionMode.ANY) {
-            return objectives.values().stream().mapToLong(ObjectiveProgress::required).min().orElse(0L);
-        }
         return objectives.values().stream().mapToLong(ObjectiveProgress::required).sum();
     }
 
     public synchronized double percentage() {
+        return displayProgress().percentage();
+    }
+
+    public synchronized ProgressSummary displayProgress() {
         if (definition.completionMode() == CompletionMode.ANY) {
-            return objectives.values().stream()
-                    .mapToDouble(progress -> (double) progress.current() / progress.required())
-                    .max()
-                    .orElse(0D) * 100D;
+            ObjectiveProgress best = null;
+            double bestRatio = -1D;
+            for (ObjectiveProgress progress : objectives.values()) {
+                double ratio = Math.min(1D, (double) progress.current() / progress.required());
+                if (ratio > bestRatio) {
+                    best = progress;
+                    bestRatio = ratio;
+                }
+            }
+            return best == null
+                    ? new ProgressSummary(0L, 0L, 0D)
+                    : new ProgressSummary(best.current(), best.required(), bestRatio * 100D);
         }
         long required = requiredTotal();
-        return required == 0L ? 0D : Math.min(100D, (double) currentTotal() * 100D / required);
+        long current = currentTotal();
+        double percentage = required == 0L ? 0D : Math.min(100D, (double) current * 100D / required);
+        return new ProgressSummary(current, required, percentage);
     }
-}
 
+    public record ProgressSummary(long current, long required, double percentage) {}
+}

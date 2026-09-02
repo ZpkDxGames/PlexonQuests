@@ -18,6 +18,10 @@ Definition errors include an exact file/key path. An invalid quest or pool is qu
 
 Paths are resolved inside `plugins/PlexonQuests`; configuration and backup paths cannot escape that directory.
 
+## Menu layout upgrades
+
+PlexonQuests 2.0 uses `layout-version: 2` in `menus.yml`. On the first 2.0 startup, a layout-1 menu is copied to `plugins/PlexonQuests/backups/menus-v1-<timestamp>.yml` and the bundled layout-2 menu is installed atomically. Reapply intentional menu customizations to the new structure after comparing that backup. Reload validation rejects missing, out-of-bounds, duplicate, and overlapping menu slots.
+
 ## Root settings
 
 ### `rotation`

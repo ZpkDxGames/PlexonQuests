@@ -59,7 +59,7 @@ For each uncertain claim:
 4. Preserve the evidence and decision in the server's operator log.
 5. If provider evidence is inconclusive, prefer avoiding automatic redelivery; a manual compensating grant is auditable and limits duplicate side effects.
 
-Version 1.0.0 deliberately does not auto-resolve or auto-redeliver uncertain transactions. Direct SQL edits on a live server are unsupported. If database-level reconciliation is required, stop the server, work from a backup copy, and validate referential/transaction state before replacement.
+PlexonQuests deliberately does not auto-resolve or auto-redeliver uncertain transactions. Direct SQL edits on a live server are unsupported. If database-level reconciliation is required, stop the server, work from a backup copy, and validate referential/transaction state before replacement.
 
 ## Writer queue or flush failures
 

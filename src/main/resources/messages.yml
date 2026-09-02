@@ -36,6 +36,7 @@ claims:
 
 rerolls:
   disabled: "<yellow>Quest rerolls are disabled."
+  preparing: "<yellow>A reroll is already being prepared."
   unavailable: "<yellow>No eligible replacement is currently available. Nothing was consumed."
   success: "<aqua>Quest rerolled: <white><old_quest></white> <dark_gray>→</dark_gray> <white><new_quest></white>"
   limit: "<yellow>You have used all rerolls for this period."

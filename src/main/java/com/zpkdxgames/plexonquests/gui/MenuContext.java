@@ -12,7 +12,12 @@ public record MenuContext(
         MenuContext parent) {
 
     public static MenuContext journal(QuestScope scope) {
-        return new MenuContext(MenuType.JOURNAL, scope, QuestStatusFilter.ALL, 0, null, null);
+        return new MenuContext(
+                MenuType.JOURNAL,
+                scope == null ? QuestScope.DAILY : scope,
+                QuestStatusFilter.ALL,
+                0,
+                null,
+                null);
     }
 }
-

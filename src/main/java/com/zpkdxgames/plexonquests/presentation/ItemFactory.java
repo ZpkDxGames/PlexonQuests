@@ -3,6 +3,7 @@ package com.zpkdxgames.plexonquests.presentation;
 import java.util.List;
 import net.kyori.adventure.text.Component;
 import org.bukkit.Material;
+import org.bukkit.inventory.ItemFlag;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 
@@ -12,6 +13,7 @@ public final class ItemFactory {
         ItemMeta meta = item.getItemMeta();
         meta.displayName(name);
         meta.lore(lore);
+        meta.addItemFlags(ItemFlag.HIDE_ATTRIBUTES);
         if (glow) {
             meta.setEnchantmentGlintOverride(true);
         }
@@ -19,4 +21,3 @@ public final class ItemFactory {
         return item;
     }
 }
-

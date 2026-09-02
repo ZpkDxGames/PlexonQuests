@@ -1,4 +1,5 @@
 schema-version: 1
+layout-version: 2
 
 progress:
   segments: 10
@@ -38,31 +39,45 @@ journal:
   size: 54
   quest-slots: [10, 11, 12, 13, 14, 15, 16, 19, 20, 21, 22, 23, 24, 25, 28, 29, 30, 31, 32, 33, 34]
   previous-slot: 45
-  summary-slot: 46
-  pinned-slot: 47
-  settings-slot: 48
+  summary-slot: 47
+  pinned-slot: 48
   filter-slot: 49
-  help-slot: 50
-  history-slot: 51
-  next-slot: 52
-  close-slot: 53
+  history-slot: 50
+  settings-slot: 51
+  next-slot: 53
   tabs:
-    daily: {slot: 0, material: SUNFLOWER, name: "<yellow><bold>Daily</bold>"}
-    weekly: {slot: 1, material: CLOCK, name: "<aqua><bold>Weekly</bold>"}
-    milestones: {slot: 2, material: NETHER_STAR, name: "<light_purple><bold>Milestones</bold>"}
-    manual: {slot: 3, material: WRITABLE_BOOK, name: "<green><bold>Assigned</bold>"}
-    all: {slot: 4, material: KNOWLEDGE_BOOK, name: "<white><bold>All Quests</bold>"}
+    daily:
+      slot: 1
+      material: SUNFLOWER
+      name: "<yellow><bold>Daily</bold>"
+      lore: ["<tab_state_color><tab_state>"]
+    weekly:
+      slot: 3
+      material: CLOCK
+      name: "<aqua><bold>Weekly</bold>"
+      lore: ["<tab_state_color><tab_state>"]
+    milestones:
+      slot: 5
+      material: NETHER_STAR
+      name: "<light_purple><bold>Milestones</bold>"
+      lore: ["<tab_state_color><tab_state>"]
+    manual:
+      slot: 7
+      material: WRITABLE_BOOK
+      name: "<green><bold>Assigned</bold>"
+      lore: ["<tab_state_color><tab_state>"]
   summary:
     material: PLAYER_HEAD
     name: "<gradient:#56B9F2:#92E1FF><bold><player>'s Journal</bold></gradient>"
     lore:
       - "<gray>Rank category <white><rank_category>"
-      - "<gray>Active quests <white><active>"
-      - "<gray>Ready to claim <green><claimable>"
-      - "<gray>Completed total <white><completed_total>"
       - ""
-      - "<gray>Slots <white><used_slots><dark_gray>/</dark_gray><white><slot_limit>"
-      - "<gray>Rerolls left <white><rerolls>"
+      - "<yellow>Daily <white><daily_used><dark_gray>/</dark_gray><white><daily_limit> <dark_gray>• <gray><daily_rerolls> free reroll(s)"
+      - "<aqua>Weekly <white><weekly_used><dark_gray>/</dark_gray><white><weekly_limit> <dark_gray>• <gray><weekly_rerolls> free reroll(s)"
+      - "<green>Assigned <white><manual_used><dark_gray>/</dark_gray><white><manual_limit>"
+      - ""
+      - "<gray>Ready to claim <green><claimable>"
+      - "<gray>Claimed total <white><completed_total>"
   pinned:
     material: RECOVERY_COMPASS
     name: "<aqua><bold>Pinned Quest</bold>"
@@ -71,10 +86,15 @@ journal:
       - "<progress_bar> <progress_color><percentage>%"
       - ""
       - "<yellow>Click <gray>to open"
+  pinned-empty:
+    material: COMPASS
+    name: "<gray><bold>No Pinned Quest</bold>"
+    lore:
+      - "<dark_gray>Right-click a quest to pin it."
   settings:
     material: COMPARATOR
     name: "<yellow><bold>Feedback Settings</bold>"
-    lore: ["<gray>Choose how quest progress is shown."]
+    lore: ["<gray>Choose where progress feedback appears."]
   filter:
     material: HOPPER
     name: "<aqua><bold>Status Filter</bold>"
@@ -82,41 +102,30 @@ journal:
       - "<gray>Current <white><filter>"
       - ""
       - "<yellow>Click <gray>to cycle"
-  help:
-    material: ENCHANTED_BOOK
-    name: "<green><bold>How Quests Work</bold>"
-    lore:
-      - "<gray>Complete objectives during normal play."
-      - "<gray>Claim finished rewards from details."
-      - ""
-      - "<yellow>Left-click <gray>details"
-      - "<aqua>Right-click <gray>pin or unpin"
-      - "<light_purple>Shift-left-click <gray>reroll"
   history:
     material: BOOK
     name: "<light_purple><bold>Quest History</bold>"
-    lore: ["<gray>Review claimed, expired, and completed quests."]
+    lore: ["<gray>Review earlier quest results."]
   empty:
     material: GRAY_DYE
     name: "<gray><bold>No quests here</bold>"
-    lore: ["<dark_gray>Try another scope or status filter."]
+    lore:
+      - "<dark_gray>No <scope_name> quests match <filter_name>."
+      - "<gray>Try another tab or status filter."
   quest-card:
+    objectives-shown: 2
     lore:
       - "<dark_gray><scope> • <rarity>"
+      - "<status_color><status>"
       - ""
       - "<gray><description>"
       - ""
       - "{objectives}"
       - ""
-      - "<gray>Progress <progress_color><current></progress_color><dark_gray>/</dark_gray><white><required>"
-      - "<progress_bar> <dark_gray>(</dark_gray><progress_color><percentage>%</progress_color><dark_gray>)</dark_gray>"
-      - "<gray>Time <white><time_left>"
+      - "<progress_bar> <progress_color><percentage>%"
+      - "<gray>Time left <white><time_left>"
       - ""
-      - "{rewards}"
-      - ""
-      - "<yellow>Left-click <gray>for details"
-      - "<aqua>Right-click <gray>to <pin_action>"
-      - "<light_purple>Shift-left-click <gray>to reroll"
+      - "{actions}"
 
 details:
   title: "<gradient:#56B9F2:#92E1FF><bold>Quest Details</bold></gradient>"
@@ -129,15 +138,25 @@ details:
   reroll-slot: 49
   claim-slot: 51
   close-slot: 53
+  header:
+    lore:
+      - "<dark_gray><scope> • <rarity>"
+      - "<status_color><status>"
+      - ""
+      - "<gray><description>"
+      - ""
+      - "<progress_bar> <progress_color><percentage>%"
+      - "<gray>Progress <white><current><dark_gray>/</dark_gray><white><required>"
+      - "<gray>Time left <white><time_left>"
   objective:
     active-material: LIME_DYE
     locked-material: GRAY_DYE
     complete-material: EMERALD
     name: "<objective_state_color><bold><objective_name></bold>"
     lore:
-      - "<gray><objective_description>"
-      - ""
-      - "<progress_bar> <progress_color><current></progress_color><dark_gray>/</dark_gray><white><required>"
+      - "<objective_state_color><objective_state>"
+      - "<progress_bar>"
+      - "<gray>Progress <progress_color><current></progress_color><dark_gray>/</dark_gray><white><required>"
       - "<gray>Remaining <white><remaining>"
       - "{filters}"
   claim:
@@ -151,6 +170,14 @@ details:
     material: MINECART
     name: "<gray><bold>Rewards Locked</bold>"
     lore: ["<dark_gray>Finish the quest objectives first."]
+  claim-processing:
+    material: HOPPER_MINECART
+    name: "<yellow><bold>Claim In Progress</bold>"
+    lore: ["<gray>Please wait for the current claim to finish."]
+  preview:
+    material: SPYGLASS
+    name: "<gold><bold>Administrator Preview</bold>"
+    lore: ["<gray>Player actions are disabled in previews."]
   reroll:
     material: ENDER_EYE
     name: "<light_purple><bold>Reroll Quest</bold>"
@@ -231,4 +258,3 @@ admin:
     integrations: {material: REDSTONE, name: "<red><bold>Integrations</bold>"}
     origin: {material: GRASS_BLOCK, name: "<green><bold>Block Origins</bold>"}
     uncertainty: {material: TRIPWIRE_HOOK, name: "<gold><bold>Claim Review</bold>"}
-
