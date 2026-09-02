@@ -38,7 +38,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.plugin.ServicePriority;
 import org.bukkit.plugin.java.JavaPlugin;
 
-public final class PlexonQuestsPlugin extends JavaPlugin {
+public class PlexonQuestsPlugin extends JavaPlugin {
     private ExecutorService configExecutor;
     private ConfigManager configs;
     private StorageService storage;

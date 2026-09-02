@@ -38,7 +38,7 @@
     <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
     <project.build.outputTimestamp>2026-09-01T00:00:00Z</project.build.outputTimestamp>
     <maven.compiler.release>25</maven.compiler.release>
-    <paper.version>26.2.build.121-stable</paper.version>
+    <paper.version>26.2.build.111-stable</paper.version>
     <placeholderapi.version>2.12.1</placeholderapi.version>
     <sqlite.version>3.53.4.0</sqlite.version>
     <fastutil.version>8.5.16</fastutil.version>
@@ -221,4 +221,3 @@
     </plugins>
   </build>
 </project>
-

@@ -13,7 +13,7 @@ public record IconDefinition(
 
     public IconDefinition {
         material = Objects.requireNonNullElse(material, Material.PAPER);
-        amount = Math.max(1, Math.min(material.getMaxStackSize(), amount));
+        amount = Math.max(1, Math.min(64, amount));
         texture = Objects.requireNonNullElse(texture, "");
         serializedItem = Objects.requireNonNullElse(serializedItem, "");
     }
@@ -22,4 +22,3 @@ public record IconDefinition(
         return new IconDefinition(material, 1, true, null, "", "");
     }
 }
-
