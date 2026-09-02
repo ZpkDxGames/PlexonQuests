@@ -3,16 +3,12 @@ name: Release
 on:
   push:
     tags: ['v*']
-    branches: [main]
-    paths: ['.github/release-requests/v2.0.0.yml']
 
 permissions:
   contents: write
-  actions: read
 
 jobs:
-  release-tag:
-    if: startsWith(github.ref, 'refs/tags/')
+  release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -30,39 +26,4 @@ jobs:
           generate_release_notes: true
           files: |
             target/PlexonQuests-*.jar
-            target/SHA256SUMS.txt
-
-  release-request:
-    if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Download verified main build
-        uses: actions/download-artifact@v8
-        with:
-          name: PlexonQuests-2.0.0
-          path: target
-          github-token: ${{ github.token }}
-          repository: ZpkDxGames/PlexonQuests
-          run-id: '33650014650'
-      - name: Verify release files
-        working-directory: target
-        run: |
-          test -s PlexonQuests-2.0.0.jar
-          test -s SHA256SUMS.txt
-          sha256sum --check SHA256SUMS.txt
-          unzip -tq PlexonQuests-2.0.0.jar
-          unzip -Z1 PlexonQuests-2.0.0.jar | grep -qx 'plugin.yml'
-          unzip -Z1 PlexonQuests-2.0.0.jar | grep -qx 'org/sqlite/JDBC.class'
-      - name: Publish GitHub release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v2.0.0
-          target_commitish: 494c564ae365b581092e9dc7ebd83d2160dd85f0
-          name: PlexonQuests 2.0.0
-          generate_release_notes: true
-          draft: false
-          make_latest: true
-          fail_on_unmatched_files: true
-          files: |
-            target/PlexonQuests-2.0.0.jar
             target/SHA256SUMS.txt
