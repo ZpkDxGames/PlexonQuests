@@ -30,11 +30,14 @@ public final class QuestItemRenderer {
     }
 
     public ItemStack questCard(Player player, QuestAssignment assignment, boolean pinned) {
-        double percentage = assignment.percentage();
+        QuestAssignment.ProgressSummary progress = assignment.displayProgress();
+        double percentage = progress.percentage();
         Map<String, String> values = text.placeholders(
                 "scope", assignment.definition().scope().name(),
-                "current", text.formatNumber(assignment.currentTotal()),
-                "required", text.formatNumber(assignment.requiredTotal()),
+                "status", statusLabel(assignment.state()),
+                "status_color", statusColor(assignment.state()),
+                "current", text.formatNumber(progress.current()),
+                "required", text.formatNumber(progress.required()),
                 "percentage", Integer.toString((int) Math.floor(percentage)),
                 "progress_color", text.progressColor(percentage),
                 "time_left", timeLeft(assignment),
@@ -48,9 +51,39 @@ public final class QuestItemRenderer {
                 "progress_bar", text.progressBar(percentage));
         Map<String, List<Component>> expansions = Map.of(
                 "objectives", objectiveSummary(assignment),
-                "rewards", rewardSummary(assignment));
+                "actions", actionSummary(player, assignment, pinned));
         List<Component> lore = text.expandLines(
                 configs.snapshot().menus().strings("journal.quest-card.lore"), values, components, expansions);
+        boolean glow = assignment.state() == AssignmentState.COMPLETED
+                && assignment.definition().display().icon().glowWhenComplete();
+        return items.create(
+                assignment.definition().display().icon().material(),
+                text.parse(assignment.definition().display().name()),
+                lore,
+                glow);
+    }
+
+    public ItemStack detailHeader(QuestAssignment assignment) {
+        QuestAssignment.ProgressSummary progress = assignment.displayProgress();
+        double percentage = progress.percentage();
+        Map<String, String> values = text.placeholders(
+                "scope", assignment.definition().scope().name(),
+                "status", statusLabel(assignment.state()),
+                "status_color", statusColor(assignment.state()),
+                "current", text.formatNumber(progress.current()),
+                "required", text.formatNumber(progress.required()),
+                "percentage", Integer.toString((int) Math.floor(percentage)),
+                "progress_color", text.progressColor(percentage),
+                "time_left", timeLeft(assignment));
+        Component rarity = configs.snapshot().registry().rarities().containsKey(assignment.definition().rarity())
+                ? text.parse(configs.snapshot().registry().rarities().get(assignment.definition().rarity()).display())
+                : Component.text(assignment.definition().rarity());
+        Map<String, Component> components = Map.of(
+                "rarity", rarity,
+                "description", text.parse(assignment.definition().display().shortDescription()),
+                "progress_bar", text.progressBar(percentage));
+        List<Component> lore = text.expandLines(
+                configs.snapshot().menus().strings("details.header.lore"), values, components, Map.of());
         boolean glow = assignment.state() == AssignmentState.COMPLETED
                 && assignment.definition().display().icon().glowWhenComplete();
         return items.create(
@@ -73,7 +106,7 @@ public final class QuestItemRenderer {
         Map<String, String> values = text.placeholders(
                 "objective_state_color", stateColor,
                 "objective_name", objective.definition().display(),
-                "objective_description", locked ? "Finish the previous step first." : objective.definition().display(),
+                "objective_state", locked ? "Locked" : objective.complete() ? "Complete" : "In progress",
                 "current", text.formatNumber(objective.current()),
                 "required", text.formatNumber(objective.required()),
                 "remaining", text.formatNumber(Math.max(0L, objective.required() - objective.current())),
@@ -97,17 +130,30 @@ public final class QuestItemRenderer {
         List<Component> lore = List.of(
                 text.parse("<dark_gray>" + reward.type().name()),
                 Component.empty(),
-                text.parse("<gray>Delivered only after a durable claim reservation."));
+                text.parse("<gray>Delivered when you claim this quest."));
         return items.create(material, text.parse(reward.display()), lore, false);
     }
 
     public ItemStack configured(String path, Map<String, String> values) {
+        return configured(path, values, Map.of(), false);
+    }
+
+    public ItemStack configured(
+            String path, Map<String, String> values, Map<String, Component> components) {
+        return configured(path, values, components, false);
+    }
+
+    public ItemStack configured(
+            String path,
+            Map<String, String> values,
+            Map<String, Component> components,
+            boolean glow) {
         Material material = material(path + ".material", Material.PAPER);
         Component name = text.parse(configs.snapshot().menus().string(path + ".name", " "), values);
         List<Component> lore = configs.snapshot().menus().strings(path + ".lore").stream()
-                .map(line -> text.parse(null, line, values))
+                .map(line -> text.parse(null, line, values, components))
                 .toList();
-        return items.create(material, name, lore, false);
+        return items.create(material, name, lore, glow);
     }
 
     public ItemStack filler() {
@@ -116,10 +162,12 @@ public final class QuestItemRenderer {
 
     private List<Component> objectiveSummary(QuestAssignment assignment) {
         List<Component> output = new ArrayList<>();
+        int maximum = Math.max(1, Math.min(4,
+                configs.snapshot().menus().integer("journal.quest-card.objectives-shown", 2)));
         int shown = 0;
         for (ObjectiveProgress objective : assignment.objectives()) {
-            if (shown++ >= 4) {
-                output.add(text.parse("<dark_gray>…and more"));
+            if (shown++ >= maximum) {
+                output.add(text.parse("<dark_gray>+" + (assignment.objectives().size() - maximum) + " more objective(s)"));
                 break;
             }
             String icon = objective.complete() ? "<green>✔" : "<dark_gray>•";
@@ -134,12 +182,40 @@ public final class QuestItemRenderer {
         return List.copyOf(output);
     }
 
-    private List<Component> rewardSummary(QuestAssignment assignment) {
+    private List<Component> actionSummary(Player player, QuestAssignment assignment, boolean pinned) {
         List<Component> output = new ArrayList<>();
-        output.add(text.parse("<gradient:#56B9F2:#92E1FF><bold>Rewards</bold></gradient>"));
-        assignment.definition().rewards().entries().stream().limit(3)
-                .forEach(reward -> output.add(text.parse("<dark_gray>• <gray><reward>", Map.of("reward", reward.display()))));
+        String firstLine = "<yellow>Left-click <gray>details";
+        if (player.hasPermission("plexonquests.pin")) {
+            firstLine += " <dark_gray>• <aqua>Right-click <gray>" + (pinned ? "unpin" : "pin");
+        }
+        output.add(text.parse(firstLine));
+        if (assignment.state() == AssignmentState.ACTIVE
+                && assignment.definition().scope().rotating()
+                && configs.snapshot().settings().rerolls().enabled()
+                && player.hasPermission("plexonquests.reroll")) {
+            output.add(text.parse("<light_purple>Shift-left-click <gray>reroll"));
+        }
         return List.copyOf(output);
+    }
+
+    private static String statusLabel(AssignmentState state) {
+        return switch (state) {
+            case ACTIVE -> "In progress";
+            case COMPLETED -> "Ready to claim";
+            case CLAIMING -> "Claiming";
+            case CLAIMED -> "Claimed";
+            case EXPIRED -> "Expired";
+            case CANCELLED -> "Cancelled";
+        };
+    }
+
+    private static String statusColor(AssignmentState state) {
+        return switch (state) {
+            case ACTIVE -> "#56B9F2";
+            case COMPLETED, CLAIMED -> "#72F1B8";
+            case CLAIMING -> "#FFD166";
+            case EXPIRED, CANCELLED -> "#8B95A7";
+        };
     }
 
     private List<Component> filterSummary(ObjectiveProgress objective) {
@@ -173,4 +249,3 @@ public final class QuestItemRenderer {
         return material == null || material.isAir() ? fallback : material;
     }
 }
-

@@ -81,7 +81,8 @@ public final class MenuService {
     }
 
     public void openJournal(Player player, QuestScope scope) {
-        openJournal(player, new MenuContext(MenuType.JOURNAL, scope, QuestStatusFilter.ALL, 0, null, null));
+        QuestScope initialScope = scope == null ? QuestScope.DAILY : scope;
+        openJournal(player, new MenuContext(MenuType.JOURNAL, initialScope, QuestStatusFilter.ALL, 0, null, null));
     }
 
     public void openJournal(Player player, MenuContext context) {
@@ -89,12 +90,15 @@ public final class MenuService {
         if (profile == null) {
             return;
         }
+        QuestScope selectedScope = context.scope() == null ? QuestScope.DAILY : context.scope();
+        MenuContext journalContext = new MenuContext(
+                MenuType.JOURNAL, selectedScope, context.filter(), context.page(), null, null);
         int size = configs.snapshot().menus().integer("journal.size", 54);
-        QuestMenuHolder holder = holder(player, context, size, "journal.title", "<aqua>Quest Journal");
+        QuestMenuHolder holder = holder(player, journalContext, size, "journal.title", "<aqua>Quest Journal");
         fill(holder);
         List<QuestAssignment> filtered = profile.visibleAssignments().stream()
-                .filter(assignment -> context.scope() == null || assignment.definition().scope() == context.scope())
-                .filter(assignment -> matches(context.filter(), assignment.state()))
+                .filter(assignment -> assignment.definition().scope() == selectedScope)
+                .filter(assignment -> matches(journalContext.filter(), assignment.state()))
                 .sorted(Comparator.comparingInt((QuestAssignment assignment) -> stateOrder(assignment.state()))
                         .thenComparing(QuestAssignment::assignedAt))
                 .toList();
@@ -111,13 +115,17 @@ public final class MenuService {
             int slot = slots.get(index);
             holder.getInventory().setItem(slot, renderer.questCard(
                     player, assignment, profile.pinnedAssignment().filter(assignment.id()::equals).isPresent()));
-            holder.action(slot, (viewer, click) -> handleQuestCard(viewer, context, assignment.id(), click));
+            holder.action(slot, (viewer, click) -> handleQuestCard(viewer, journalContext, assignment.id(), click));
         }
         if (filtered.isEmpty() && !slots.isEmpty()) {
-            holder.getInventory().setItem(slots.get(slots.size() / 2), renderer.configured("journal.empty", Map.of()));
+            holder.getInventory().setItem(slots.get(slots.size() / 2), renderer.configured(
+                    "journal.empty",
+                    text.placeholders(
+                            "scope_name", scopeName(selectedScope).toLowerCase(Locale.ROOT),
+                            "filter_name", filterName(journalContext.filter()).toLowerCase(Locale.ROOT))));
         }
-        bindTabs(holder, context);
-        setJournalControls(holder, player, profile, context, page, pages);
+        bindTabs(holder, journalContext);
+        setJournalControls(holder, player, profile, journalContext, page, pages);
         player.openInventory(holder.getInventory());
     }
 
@@ -128,7 +136,7 @@ public final class MenuService {
         QuestMenuHolder holder = holder(player, context, size, "details.title", "<aqua>Quest Details");
         fill(holder);
         holder.getInventory().setItem(
-                configs.snapshot().menus().integer("details.icon-slot", 4), renderer.questCard(player, assignment, false));
+                configs.snapshot().menus().integer("details.icon-slot", 4), renderer.detailHeader(assignment));
         List<Integer> objectiveSlots = configs.snapshot().menus().integers("details.objective-slots");
         boolean previousComplete = true;
         int index = 0;
@@ -149,24 +157,49 @@ public final class MenuService {
                     renderer.rewardCard(assignment.definition().rewards().entries().get(rewardIndex)));
         }
         bindCommon(holder, "details", parent);
-        int pinSlot = configs.snapshot().menus().integer("details.pin-slot", 47);
-        boolean pinned = profiles.profile(player).flatMap(PlayerProfile::pinnedAssignment)
-                .filter(assignment.id()::equals).isPresent();
-        holder.getInventory().setItem(pinSlot, renderer.configured("details.pin", text.placeholders(
-                "pin_action_title", pinned ? "Unpin Quest" : "Pin Quest")));
-        holder.action(pinSlot, (viewer, click) -> togglePin(viewer, assignment.id(), context));
-
-        int rerollSlot = configs.snapshot().menus().integer("details.reroll-slot", 49);
-        holder.getInventory().setItem(rerollSlot, renderer.configured("details.reroll", text.placeholders(
-                "free_rerolls", "See confirmation",
-                "reroll_cost", configs.snapshot().settings().rerolls().paidEnabled()
-                        ? String.format(Locale.US, "%.2f", configs.snapshot().settings().rerolls().paidCost())
-                        : "Free only")));
-        holder.action(rerollSlot, (viewer, click) -> rerolls.prepare(
-                viewer, assignment, pending -> openRerollConfirmation(viewer, pending, context)));
-
         int claimSlot = configs.snapshot().menus().integer("details.claim-slot", 51);
-        String claimPath = assignment.state() == AssignmentState.COMPLETED ? "details.claim" : "details.claim-locked";
+        boolean preview = parent != null
+                && parent.type() == MenuType.ADMIN
+                && "preview".equals(assignment.poolId());
+        if (preview) {
+            holder.getInventory().setItem(claimSlot, renderer.configured("details.preview", Map.of()));
+            player.openInventory(holder.getInventory());
+            return;
+        }
+
+        PlayerProfile profile = profiles.profile(player).orElse(null);
+        boolean assignedToPlayer = profile != null && profile.assignment(assignment.id()).isPresent();
+        if (assignedToPlayer && !assignment.state().terminal() && player.hasPermission("plexonquests.pin")) {
+            int pinSlot = configs.snapshot().menus().integer("details.pin-slot", 47);
+            boolean pinned = profile.pinnedAssignment().filter(assignment.id()::equals).isPresent();
+            holder.getInventory().setItem(pinSlot, renderer.configured("details.pin", text.placeholders(
+                    "pin_action_title", pinned ? "Unpin Quest" : "Pin Quest")));
+            holder.action(pinSlot, (viewer, click) -> togglePin(viewer, assignment.id(), context));
+        }
+
+        if (assignment.state() == AssignmentState.ACTIVE
+                && assignment.definition().scope().rotating()
+                && configs.snapshot().settings().rerolls().enabled()
+                && player.hasPermission("plexonquests.reroll")) {
+            int rerollSlot = configs.snapshot().menus().integer("details.reroll-slot", 49);
+            int freeRemaining = rerolls.freeRemaining(player, assignment.definition().scope());
+            String rerollCost = freeRemaining > 0
+                    ? "Free"
+                    : configs.snapshot().settings().rerolls().paidEnabled()
+                            ? String.format(Locale.US, "%.2f", configs.snapshot().settings().rerolls().paidCost())
+                            : "Unavailable";
+            holder.getInventory().setItem(rerollSlot, renderer.configured("details.reroll", text.placeholders(
+                    "free_rerolls", Integer.toString(freeRemaining),
+                    "reroll_cost", rerollCost)));
+            holder.action(rerollSlot, (viewer, click) -> rerolls.prepare(
+                    viewer, assignment, pending -> openRerollConfirmation(viewer, pending, context)));
+        }
+
+        String claimPath = switch (assignment.state()) {
+            case COMPLETED -> "details.claim";
+            case CLAIMING -> "details.claim-processing";
+            default -> "details.claim-locked";
+        };
         ItemStack claimItem = renderer.configured(claimPath, Map.of());
         if (assignment.state() == AssignmentState.COMPLETED) {
             var meta = claimItem.getItemMeta();
@@ -243,7 +276,8 @@ public final class MenuService {
             return;
         }
         int pageSize = configs.snapshot().menus().integers("history.entry-slots").size();
-        storage.history(player.getUniqueId(), pageSize, Math.max(0, page) * pageSize).whenComplete((history, failure) ->
+        int currentPage = Math.max(0, page);
+        storage.history(player.getUniqueId(), pageSize + 1, currentPage * pageSize).whenComplete((history, failure) ->
                 Bukkit.getScheduler().runTask(plugin, () -> {
                     if (failure != null || !player.isOnline()) {
                         if (failure != null) {
@@ -251,7 +285,9 @@ public final class MenuService {
                         }
                         return;
                     }
-                    buildHistory(player, history, page, parent);
+                    boolean hasNext = history.size() > pageSize;
+                    List<HistoryEntry> entries = hasNext ? history.subList(0, pageSize) : history;
+                    buildHistory(player, entries, currentPage, parent, hasNext);
                 }));
     }
 
@@ -324,14 +360,21 @@ public final class MenuService {
 
     public void openContext(Player player, MenuContext context) {
         if (context == null) {
-            openJournal(player, (QuestScope) null);
+            openJournal(player, QuestScope.DAILY);
             return;
         }
         switch (context.type()) {
             case JOURNAL -> openJournal(player, context);
-            case DETAILS -> profiles.profile(player)
-                    .flatMap(profile -> profile.assignment(context.assignmentId()))
-                    .ifPresent(assignment -> openDetails(player, assignment, context.parent()));
+            case DETAILS -> {
+                QuestAssignment assignment = profiles.profile(player)
+                        .flatMap(profile -> profile.assignment(context.assignmentId()))
+                        .orElse(null);
+                if (assignment == null) {
+                    openContext(player, context.parent());
+                } else {
+                    openDetails(player, assignment, context.parent());
+                }
+            }
             case HISTORY -> openHistory(player, context.page(), context.parent());
             case SETTINGS -> openSettings(player, context.parent());
             case ADMIN -> openAdmin(player, context.page());
@@ -357,7 +400,7 @@ public final class MenuService {
         fill(holder);
         holder.getInventory().setItem(
                 configs.snapshot().menus().integer("confirmation.quest-slot", 13),
-                renderer.questCard(player, pending.previous(), false));
+                renderer.detailHeader(pending.previous()));
         int confirm = configs.snapshot().menus().integer("confirmation.confirm-slot", 11);
         holder.getInventory().setItem(confirm, renderer.configured("confirmation.confirm", Map.of(
                 "reroll_cost", pending.cost() <= 0D ? "Free" : String.format(Locale.US, "%.2f", pending.cost()))));
@@ -374,7 +417,8 @@ public final class MenuService {
         player.openInventory(holder.getInventory());
     }
 
-    private void buildHistory(Player player, List<HistoryEntry> history, int page, MenuContext parent) {
+    private void buildHistory(
+            Player player, List<HistoryEntry> history, int page, MenuContext parent, boolean hasNext) {
         MenuContext context = new MenuContext(MenuType.HISTORY, null, QuestStatusFilter.ALL, page, null, parent);
         int size = configs.snapshot().menus().integer("history.size", 54);
         QuestMenuHolder holder = holder(player, context, size, "history.title", "<light_purple>Quest History");
@@ -403,7 +447,7 @@ public final class MenuService {
             holder.action(previous, (viewer, click) -> openHistory(viewer, page - 1, parent));
         }
         int next = configs.snapshot().menus().integer("history.next-slot", 53);
-        if (history.size() == slots.size()) {
+        if (hasNext) {
             holder.getInventory().setItem(next, renderer.configured("common.next", Map.of(
                     "page", Integer.toString(page + 2), "pages", "?")));
             holder.action(next, (viewer, click) -> openHistory(viewer, page + 1, parent));
@@ -415,6 +459,7 @@ public final class MenuService {
         PlayerProfile profile = requireProfile(player);
         QuestAssignment assignment = profile == null ? null : profile.assignment(assignmentId).orElse(null);
         if (assignment == null) {
+            openJournal(player, context);
             return;
         }
         if (click.isRightClick()) {
@@ -449,17 +494,19 @@ public final class MenuService {
         bindTab(holder, context, "weekly", QuestScope.WEEKLY);
         bindTab(holder, context, "milestones", QuestScope.MILESTONE);
         bindTab(holder, context, "manual", QuestScope.MANUAL);
-        String path = "journal.tabs.all";
-        int slot = configs.snapshot().menus().integer(path + ".slot", 4);
-        holder.getInventory().setItem(slot, renderer.configured(path, Map.of()));
-        holder.action(slot, (viewer, click) -> openJournal(
-                viewer, new MenuContext(MenuType.JOURNAL, null, context.filter(), 0, null, null)));
     }
 
     private void bindTab(QuestMenuHolder holder, MenuContext context, String key, QuestScope scope) {
         String path = "journal.tabs." + key;
         int slot = configs.snapshot().menus().integer(path + ".slot", scope.ordinal());
-        holder.getInventory().setItem(slot, renderer.configured(path, Map.of()));
+        boolean selected = context.scope() == scope;
+        holder.getInventory().setItem(slot, renderer.configured(
+                path,
+                text.placeholders(
+                        "tab_state", selected ? "Selected" : "Click to view",
+                        "tab_state_color", selected ? "#72F1B8" : "#8B95A7"),
+                Map.of(),
+                selected));
         holder.action(slot, (viewer, click) -> openJournal(
                 viewer, new MenuContext(MenuType.JOURNAL, scope, context.filter(), 0, null, null)));
     }
@@ -474,53 +521,68 @@ public final class MenuService {
         setPagination(holder, "journal", page, pages,
                 () -> openJournal(player, new MenuContext(MenuType.JOURNAL, context.scope(), context.filter(), page - 1, null, null)),
                 () -> openJournal(player, new MenuContext(MenuType.JOURNAL, context.scope(), context.filter(), page + 1, null, null)));
-        int slotLimit = context.scope() == QuestScope.WEEKLY
-                ? slotResolver.resolve(player, QuestScope.WEEKLY, profile.rankCategory(), configs.snapshot().settings())
-                : slotResolver.resolve(player, QuestScope.DAILY, profile.rankCategory(), configs.snapshot().settings());
-        int used = context.scope() == null
-                ? profile.visibleAssignments().size()
-                : profile.assignments(context.scope()).size();
-        int summarySlot = configs.snapshot().menus().integer("journal.summary-slot", 46);
+        int dailyLimit = slotResolver.resolve(
+                player, QuestScope.DAILY, profile.rankCategory(), configs.snapshot().settings());
+        int weeklyLimit = slotResolver.resolve(
+                player, QuestScope.WEEKLY, profile.rankCategory(), configs.snapshot().settings());
+        long dailyUsed = profile.visibleAssignments().stream()
+                .filter(assignment -> assignment.definition().scope() == QuestScope.DAILY)
+                .count();
+        long weeklyUsed = profile.visibleAssignments().stream()
+                .filter(assignment -> assignment.definition().scope() == QuestScope.WEEKLY)
+                .count();
+        long manualUsed = profile.visibleAssignments().stream()
+                .filter(assignment -> assignment.definition().scope() == QuestScope.MANUAL)
+                .count();
+        int summarySlot = configs.snapshot().menus().integer("journal.summary-slot", 47);
         ItemStack summary = renderer.configured("journal.summary", text.placeholders(
                 "player", player.getName(),
                 "rank_category", profile.rankCategory(),
-                "active", Long.toString(profile.visibleAssignments().stream().filter(a -> a.state() == AssignmentState.ACTIVE).count()),
                 "claimable", Long.toString(profile.claimableCount()),
                 "completed_total", Long.toString(profile.completedTotal()),
-                "used_slots", Integer.toString(used),
-                "slot_limit", Integer.toString(slotLimit),
-                "rerolls", "View a quest"));
+                "daily_used", Long.toString(dailyUsed),
+                "daily_limit", Integer.toString(dailyLimit),
+                "daily_rerolls", Integer.toString(rerolls.freeRemaining(player, QuestScope.DAILY)),
+                "weekly_used", Long.toString(weeklyUsed),
+                "weekly_limit", Integer.toString(weeklyLimit),
+                "weekly_rerolls", Integer.toString(rerolls.freeRemaining(player, QuestScope.WEEKLY)),
+                "manual_used", Long.toString(manualUsed),
+                "manual_limit", Integer.toString(configs.snapshot().settings().assignments().maximumActiveManual())));
         if (summary.getItemMeta() instanceof SkullMeta skull) {
             skull.setOwningPlayer(player);
             summary.setItemMeta(skull);
         }
         holder.getInventory().setItem(summarySlot, summary);
-        int pinnedSlot = configs.snapshot().menus().integer("journal.pinned-slot", 47);
+        int pinnedSlot = configs.snapshot().menus().integer("journal.pinned-slot", 48);
         QuestAssignment pinned = profile.pinnedAssignment().flatMap(profile::assignment).orElse(null);
-        holder.getInventory().setItem(pinnedSlot, renderer.configured("journal.pinned", text.placeholders(
-                "pinned_name", pinned == null ? "No quest pinned" : text.plain(text.parse(pinned.definition().display().name())),
-                "percentage", pinned == null ? "0" : Integer.toString((int) pinned.percentage()),
-                "progress_color", text.progressColor(pinned == null ? 0D : pinned.percentage()))));
-        if (pinned != null) {
+        if (pinned == null) {
+            holder.getInventory().setItem(pinnedSlot, renderer.configured("journal.pinned-empty", Map.of()));
+        } else {
+            double percentage = pinned.percentage();
+            holder.getInventory().setItem(pinnedSlot, renderer.configured(
+                    "journal.pinned",
+                    text.placeholders(
+                            "pinned_name", text.plain(text.parse(pinned.definition().display().name())),
+                            "percentage", Integer.toString((int) Math.floor(percentage)),
+                            "progress_color", text.progressColor(percentage)),
+                    Map.of("progress_bar", text.progressBar(percentage))));
             holder.action(pinnedSlot, (viewer, click) -> openDetails(viewer, pinned, context));
         }
-        int settings = configs.snapshot().menus().integer("journal.settings-slot", 48);
-        holder.getInventory().setItem(settings, renderer.configured("journal.settings", Map.of()));
-        holder.action(settings, (viewer, click) -> openSettings(viewer, context));
         int filter = configs.snapshot().menus().integer("journal.filter-slot", 49);
-        holder.getInventory().setItem(filter, renderer.configured("journal.filter", Map.of("filter", context.filter().name())));
+        holder.getInventory().setItem(filter, renderer.configured(
+                "journal.filter", Map.of("filter", filterName(context.filter()))));
         holder.action(filter, (viewer, click) -> openJournal(
                 viewer, new MenuContext(MenuType.JOURNAL, context.scope(), context.filter().next(), 0, null, null)));
-        int help = configs.snapshot().menus().integer("journal.help-slot", 50);
-        holder.getInventory().setItem(help, renderer.configured("journal.help", Map.of()));
-        holder.action(help, (viewer, click) -> viewer.sendMessage(text.message("quests.assigned", Map.of(
-                "scope", "Journal", "quest_name", "Left-click details, right-click pin, shift-left-click reroll."))));
-        int history = configs.snapshot().menus().integer("journal.history-slot", 51);
-        holder.getInventory().setItem(history, renderer.configured("journal.history", Map.of()));
-        holder.action(history, (viewer, click) -> openHistory(viewer, 0, context));
-        int close = configs.snapshot().menus().integer("journal.close-slot", 53);
-        holder.getInventory().setItem(close, renderer.configured("common.close", Map.of()));
-        holder.action(close, (viewer, click) -> viewer.closeInventory());
+        if (player.hasPermission("plexonquests.history")) {
+            int history = configs.snapshot().menus().integer("journal.history-slot", 50);
+            holder.getInventory().setItem(history, renderer.configured("journal.history", Map.of()));
+            holder.action(history, (viewer, click) -> openHistory(viewer, 0, context));
+        }
+        if (player.hasPermission("plexonquests.settings")) {
+            int settings = configs.snapshot().menus().integer("journal.settings-slot", 51);
+            holder.getInventory().setItem(settings, renderer.configured("journal.settings", Map.of()));
+            holder.action(settings, (viewer, click) -> openSettings(viewer, context));
+        }
     }
 
     private void bindCommon(QuestMenuHolder holder, String menu, MenuContext parent) {
@@ -684,6 +746,23 @@ public final class MenuService {
             case CLAIMED -> 3;
             case EXPIRED -> 4;
             case CANCELLED -> 5;
+        };
+    }
+
+    private static String filterName(QuestStatusFilter filter) {
+        return switch (filter) {
+            case ALL -> "All quests";
+            case ACTIVE -> "In progress";
+            case COMPLETED -> "Ready to claim";
+        };
+    }
+
+    private static String scopeName(QuestScope scope) {
+        return switch (scope) {
+            case DAILY -> "Daily";
+            case WEEKLY -> "Weekly";
+            case MILESTONE -> "Milestone";
+            case MANUAL -> "Assigned";
         };
     }
 

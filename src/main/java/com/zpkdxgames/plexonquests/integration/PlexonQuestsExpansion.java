@@ -81,7 +81,8 @@ public final class PlexonQuestsExpansion extends PlaceholderExpansion {
                     : text.plain(text.parse(pinned.definition().display().name()));
             case "pinned_progress" -> pinned == null
                     ? neutral
-                    : text.formatNumber(pinned.currentTotal()) + "/" + text.formatNumber(pinned.requiredTotal());
+                    : text.formatNumber(pinned.displayProgress().current()) + "/"
+                            + text.formatNumber(pinned.displayProgress().required());
             case "pinned_percentage" -> pinned == null
                     ? neutral
                     : Integer.toString((int) Math.floor(pinned.percentage()));

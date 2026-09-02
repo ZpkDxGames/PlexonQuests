@@ -1,23 +1,28 @@
 package com.zpkdxgames.plexonquests.config;
 
-import java.io.File;
+import com.zpkdxgames.plexonquests.util.AtomicFiles;
 import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.HashSet;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicReference;
+import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.InvalidConfigurationException;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.plugin.java.JavaPlugin;
 
 public final class ConfigManager {
+    private static final int CURRENT_MENU_LAYOUT = 2;
     private static final List<String> DEFAULT_RESOURCES = List.of(
             "config.yml",
             "messages.yml",
@@ -143,6 +148,34 @@ public final class ConfigManager {
                 plugin.saveResource(resource, false);
             }
         }
+        migrateMenus();
+    }
+
+    private void migrateMenus() throws IOException {
+        Path menusPath = dataDirectory.resolve("menus.yml");
+        String existing = Files.readString(menusPath, StandardCharsets.UTF_8);
+        YamlConfiguration menus = new YamlConfiguration();
+        try {
+            menus.loadFromString(existing);
+        } catch (InvalidConfigurationException exception) {
+            return;
+        }
+        int layout = menus.getInt("layout-version", 1);
+        if (layout >= CURRENT_MENU_LAYOUT) {
+            return;
+        }
+
+        Path backup = dataDirectory.resolve("backups")
+                .resolve("menus-v" + layout + "-" + Instant.now().toEpochMilli() + ".yml");
+        Files.copy(menusPath, backup, StandardCopyOption.COPY_ATTRIBUTES);
+        try (InputStream bundled = plugin.getResource("menus.yml")) {
+            if (bundled == null) {
+                throw new IOException("Bundled menus.yml is missing");
+            }
+            AtomicFiles.writeUtf8(menusPath, new String(bundled.readAllBytes(), StandardCharsets.UTF_8));
+        }
+        plugin.getLogger().info("Upgraded menus.yml to layout version " + CURRENT_MENU_LAYOUT
+                + "; previous layout saved as " + backup.getFileName());
     }
 
     private YamlConfiguration loadYaml(String relative) throws IOException, InvalidConfigurationException {
@@ -163,6 +196,9 @@ public final class ConfigManager {
     }
 
     private static void validateMenus(YamlConfiguration yaml, List<String> errors) {
+        if (yaml.getInt("layout-version", -1) != CURRENT_MENU_LAYOUT) {
+            errors.add("menus.yml.layout-version must be " + CURRENT_MENU_LAYOUT);
+        }
         validateMenu(yaml, "journal", "quest-slots", errors);
         validateMenu(yaml, "details", "objective-slots", errors);
         validateMenu(yaml, "history", "entry-slots", errors);
@@ -172,33 +208,71 @@ public final class ConfigManager {
     }
 
     private static void validateMenu(YamlConfiguration yaml, String path, String primarySlots, List<String> errors) {
+        ConfigurationSection section = yaml.getConfigurationSection(path);
+        if (section == null) {
+            errors.add("menus.yml." + path + " is missing");
+            return;
+        }
         int size = yaml.getInt(path + ".size", 0);
         if (size < 9 || size > 54 || size % 9 != 0) {
             errors.add("menus.yml." + path + ".size must be a multiple of 9 between 9 and 54");
             return;
         }
         if (primarySlots != null) {
-            List<Integer> slots = yaml.getIntegerList(path + "." + primarySlots);
+            List<Integer> slots = section.getIntegerList(primarySlots);
             if (slots.isEmpty()) {
                 errors.add("menus.yml." + path + "." + primarySlots + " cannot be empty");
             }
-            Set<Integer> seen = new HashSet<>();
-            for (int slot : slots) {
-                if (slot < 0 || slot >= size) {
-                    errors.add("menus.yml." + path + "." + primarySlots + " contains out-of-bounds slot " + slot);
-                } else if (!seen.add(slot)) {
-                    errors.add("menus.yml." + path + "." + primarySlots + " contains duplicate slot " + slot);
+        }
+
+        Map<Integer, String> occupied = new HashMap<>();
+        for (String key : section.getKeys(true)) {
+            Object value = section.get(key);
+            if (isSingleSlotKey(key) || isMappedSlotKey(key, value)) {
+                if (value instanceof Number number) {
+                    validateSlot(path, key, number.intValue(), size, occupied, errors);
+                } else if (!(value instanceof ConfigurationSection)) {
+                    errors.add("menus.yml." + path + "." + key + " must be an integer slot");
+                }
+            } else if (key.endsWith("-slots") && value instanceof List<?> slots) {
+                for (int index = 0; index < slots.size(); index++) {
+                    Object rawSlot = slots.get(index);
+                    if (!(rawSlot instanceof Number number)) {
+                        errors.add("menus.yml." + path + "." + key + " contains a non-integer slot");
+                        continue;
+                    }
+                    validateSlot(path, key + "[" + index + "]", number.intValue(), size, occupied, errors);
                 }
             }
         }
-        for (String key : yaml.getConfigurationSection(path).getKeys(false)) {
-            if (!key.endsWith("-slot")) {
-                continue;
-            }
-            int slot = yaml.getInt(path + "." + key, -1);
-            if (slot < 0 || slot >= size) {
-                errors.add("menus.yml." + path + "." + key + " is out of bounds");
-            }
+    }
+
+    private static boolean isSingleSlotKey(String key) {
+        return key.endsWith("-slot") || key.endsWith(".slot");
+    }
+
+    private static boolean isMappedSlotKey(String key, Object value) {
+        int separator = key.lastIndexOf('.');
+        return separator > 0
+                && key.substring(0, separator).endsWith("-slots")
+                && !(value instanceof ConfigurationSection);
+    }
+
+    private static void validateSlot(
+            String menu,
+            String key,
+            int slot,
+            int size,
+            Map<Integer, String> occupied,
+            List<String> errors) {
+        String fullPath = "menus.yml." + menu + "." + key;
+        if (slot < 0 || slot >= size) {
+            errors.add(fullPath + " is out of bounds");
+            return;
+        }
+        String previous = occupied.putIfAbsent(slot, fullPath);
+        if (previous != null) {
+            errors.add(fullPath + " overlaps " + previous + " at slot " + slot);
         }
     }
 
@@ -215,4 +289,3 @@ public final class ConfigManager {
         }
     }
 }
-

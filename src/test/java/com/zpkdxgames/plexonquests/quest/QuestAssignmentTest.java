@@ -39,6 +39,21 @@ class QuestAssignmentTest {
     }
 
     @Test
+    void anyModeDisplaysOneCoherentObjectivePath() {
+        QuestAssignment assignment = assignment(CompletionMode.ANY, 2L, 10L);
+
+        assignment.addProgress("objective_1", 1L, START.plusSeconds(1));
+        assignment.addProgress("objective_2", 4L, START.plusSeconds(2));
+
+        QuestAssignment.ProgressSummary progress = assignment.displayProgress();
+        assertEquals(1L, progress.current());
+        assertEquals(2L, progress.required());
+        assertEquals(50D, progress.percentage());
+        assertEquals(5L, assignment.currentTotal());
+        assertEquals(12L, assignment.requiredTotal());
+    }
+
+    @Test
     void sequenceRejectsObjectivesOutOfOrder() {
         QuestAssignment assignment = assignment(CompletionMode.SEQUENCE, 1L, 1L);
 

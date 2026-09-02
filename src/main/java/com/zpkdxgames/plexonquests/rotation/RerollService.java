@@ -41,6 +41,7 @@ public final class RerollService {
     private final WeightedSelector selector = new WeightedSelector();
     private final Map<UUID, PendingReroll> pending = new ConcurrentHashMap<>();
     private final Map<String, Integer> usedCounts = new ConcurrentHashMap<>();
+    private final Set<UUID> preparing = ConcurrentHashMap.newKeySet();
 
     public RerollService(
             JavaPlugin plugin,
@@ -74,67 +75,110 @@ public final class RerollService {
         if (profile == null) {
             return;
         }
-        storage.countRerolls(profile.playerId(), assignment.periodKey()).whenComplete((used, countFailure) -> {
-            if (countFailure != null) {
-                plugin.getLogger().log(Level.WARNING, "Could not count quest rerolls", countFailure);
+        UUID playerId = player.getUniqueId();
+        PendingReroll existing = pending.get(playerId);
+        if (existing != null) {
+            if (Instant.now().isBefore(existing.expiresAt())) {
+                player.sendMessage(text.message("rerolls.preparing", Map.of()));
                 return;
             }
-            usedCounts.put(countKey(profile.playerId(), assignment.periodKey()), used);
-            if (used >= configs.snapshot().settings().rerolls().maximumPerPeriod()) {
-                Bukkit.getScheduler().runTask(plugin, () ->
-                        player.sendMessage(text.message("rerolls.limit", Map.of())));
-                return;
-            }
-            double cost = cost(player, assignment.definition().scope(), used);
-            if (Double.isNaN(cost)) {
-                Bukkit.getScheduler().runTask(plugin, () ->
-                        player.sendMessage(text.message("rerolls.limit", Map.of())));
-                return;
-            }
-            PoolDefinition pool = pool(assignment);
-            if (pool == null || !eligibility.evaluate(player, profile, pool).eligible()) {
-                Bukkit.getScheduler().runTask(plugin, () ->
-                        player.sendMessage(text.message("rerolls.unavailable", Map.of())));
-                return;
-            }
-            Instant cutoff = Instant.now().minus(pool.recentHistoryExclusion());
-            storage.recentQuestIds(profile.playerId(), cutoff).whenComplete((recent, historyFailure) ->
-                    Bukkit.getScheduler().runTask(plugin, () -> {
-                        if (historyFailure != null || !player.isOnline()) {
-                            return;
-                        }
-                        Set<String> excluded = new HashSet<>(recent);
-                        excluded.add(assignment.definition().id());
-                        long seed = Hashing.stableLong(assignment.id() + "|reroll|" + used);
-                        List<QuestDefinition> replacements = selector.select(
-                                pool,
-                                configs.snapshot().registry().quests(),
-                                1,
-                                seed,
-                                excluded,
-                                quest -> eligibility.evaluate(player, profile, quest).eligible());
-                        if (replacements.isEmpty()) {
+            pending.remove(playerId, existing);
+        }
+        if (!preparing.add(playerId)) {
+            player.sendMessage(text.message("rerolls.preparing", Map.of()));
+            return;
+        }
+
+        storage.countRerolls(profile.playerId(), assignment.periodKey()).whenComplete((used, countFailure) ->
+                Bukkit.getScheduler().runTask(plugin, () -> {
+                    boolean awaitingHistory = false;
+                    try {
+                        if (countFailure != null) {
+                            plugin.getLogger().log(Level.WARNING, "Could not count quest rerolls", countFailure);
                             player.sendMessage(text.message("rerolls.unavailable", Map.of()));
                             return;
                         }
-                        if (cost > 0D && (!economy.available() || economy.balance(player) < cost)) {
-                            player.sendMessage(text.message(
-                                    "rerolls.insufficient-funds", Map.of("cost", String.format(java.util.Locale.US, "%.2f", cost))));
+                        if (!player.isOnline()
+                                || assignment.state() != AssignmentState.ACTIVE
+                                || profile.assignment(assignment.id()).isEmpty()) {
                             return;
                         }
-                        QuestAssignment replacement = QuestAssignment.create(
-                                profile.playerId(),
-                                replacements.getFirst(),
-                                assignment.poolId(),
-                                assignment.periodKey(),
-                                Instant.now(),
-                                assignment.expiresAt().orElse(null));
-                        PendingReroll reservation = new PendingReroll(
-                                UUID.randomUUID().toString(), assignment, replacement, cost, Instant.now().plusSeconds(60));
-                        pending.put(player.getUniqueId(), reservation);
-                        ready.accept(reservation);
-                    }));
-        });
+                        usedCounts.put(countKey(profile.playerId(), assignment.periodKey()), used);
+                        if (used >= configs.snapshot().settings().rerolls().maximumPerPeriod()) {
+                            player.sendMessage(text.message("rerolls.limit", Map.of()));
+                            return;
+                        }
+                        double cost = cost(player, assignment.definition().scope(), used);
+                        if (Double.isNaN(cost)) {
+                            player.sendMessage(text.message("rerolls.limit", Map.of()));
+                            return;
+                        }
+                        PoolDefinition pool = pool(assignment);
+                        if (pool == null || !eligibility.evaluate(player, profile, pool).eligible()) {
+                            player.sendMessage(text.message("rerolls.unavailable", Map.of()));
+                            return;
+                        }
+                        Instant cutoff = Instant.now().minus(pool.recentHistoryExclusion());
+                        storage.recentQuestIds(profile.playerId(), cutoff).whenComplete((recent, historyFailure) ->
+                                Bukkit.getScheduler().runTask(plugin, () -> {
+                                    try {
+                                        if (historyFailure != null) {
+                                            plugin.getLogger().log(
+                                                    Level.WARNING, "Could not load recent quests for reroll", historyFailure);
+                                            player.sendMessage(text.message("rerolls.unavailable", Map.of()));
+                                            return;
+                                        }
+                                        if (!player.isOnline()
+                                                || assignment.state() != AssignmentState.ACTIVE
+                                                || profile.assignment(assignment.id()).isEmpty()) {
+                                            return;
+                                        }
+                                        Set<String> excluded = new HashSet<>(recent);
+                                        excluded.add(assignment.definition().id());
+                                        long seed = Hashing.stableLong(assignment.id() + "|reroll|" + used);
+                                        List<QuestDefinition> replacements = selector.select(
+                                                pool,
+                                                configs.snapshot().registry().quests(),
+                                                1,
+                                                seed,
+                                                excluded,
+                                                quest -> eligibility.evaluate(player, profile, quest).eligible());
+                                        if (replacements.isEmpty()) {
+                                            player.sendMessage(text.message("rerolls.unavailable", Map.of()));
+                                            return;
+                                        }
+                                        if (cost > 0D && (!economy.available() || economy.balance(player) < cost)) {
+                                            player.sendMessage(text.message(
+                                                    "rerolls.insufficient-funds",
+                                                    Map.of("cost", String.format(java.util.Locale.US, "%.2f", cost))));
+                                            return;
+                                        }
+                                        QuestAssignment replacement = QuestAssignment.create(
+                                                profile.playerId(),
+                                                replacements.getFirst(),
+                                                assignment.poolId(),
+                                                assignment.periodKey(),
+                                                Instant.now(),
+                                                assignment.expiresAt().orElse(null));
+                                        PendingReroll reservation = new PendingReroll(
+                                                UUID.randomUUID().toString(),
+                                                assignment,
+                                                replacement,
+                                                cost,
+                                                Instant.now().plusSeconds(60));
+                                        pending.put(playerId, reservation);
+                                        ready.accept(reservation);
+                                    } finally {
+                                        preparing.remove(playerId);
+                                    }
+                                }));
+                        awaitingHistory = true;
+                    } finally {
+                        if (!awaitingHistory) {
+                            preparing.remove(playerId);
+                        }
+                    }
+                }));
     }
 
     public void confirm(Player player) {
@@ -196,6 +240,7 @@ public final class RerollService {
 
     public void cancel(Player player) {
         pending.remove(player.getUniqueId());
+        preparing.remove(player.getUniqueId());
     }
 
     public PendingReroll pending(Player player) {

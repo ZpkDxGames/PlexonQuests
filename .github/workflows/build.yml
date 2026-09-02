@@ -34,13 +34,18 @@ jobs:
         shell: bash
         run: |
           set +e
-          {
-            test -s target/PlexonQuests-1.0.0.jar
-            jar tf target/PlexonQuests-1.0.0.jar | grep -q '^plugin.yml$'
-            jar tf target/PlexonQuests-1.0.0.jar | grep -q '^org/sqlite/JDBC.class$'
-            sha256sum target/PlexonQuests-1.0.0.jar > target/SHA256SUMS.txt
+          (
+            set -e
+            mapfile -t jars < <(find target -maxdepth 1 -type f -name 'PlexonQuests-*.jar' -print)
+            test "${#jars[@]}" -eq 1
+            jar_path=${jars[0]}
+            test -s "${jar_path}"
+            jar tf "${jar_path}" > target/jar-contents.txt
+            grep -qx 'plugin.yml' target/jar-contents.txt
+            grep -qx 'org/sqlite/JDBC.class' target/jar-contents.txt
+            sha256sum "${jar_path}" > target/SHA256SUMS.txt
             sha256sum --check target/SHA256SUMS.txt
-          } 2>&1 | tee distribution.log
+          ) 2>&1 | tee distribution.log
           code=${PIPESTATUS[0]}
           echo "exit_code=${code}" >> "${GITHUB_OUTPUT}"
           exit 0
@@ -78,9 +83,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: steps.verify.outputs.exit_code == '0' && steps.distribution.outputs.exit_code == '0'
         with:
-          name: PlexonQuests-1.0.0
+          name: PlexonQuests-2.0.0
           path: |
-            target/PlexonQuests-1.0.0.jar
+            target/PlexonQuests-*.jar
             target/SHA256SUMS.txt
       - name: Enforce result
         if: always()

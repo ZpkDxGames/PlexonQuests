@@ -51,10 +51,11 @@ public final class EffectService implements ProgressObserver, AutoCloseable {
         if (profile == null) {
             return;
         }
-        double percentage = assignment.percentage();
+        QuestAssignment.ProgressSummary progress = assignment.displayProgress();
+        double percentage = progress.percentage();
         Map<String, String> values = text.placeholders(
-                "current", text.formatNumber(assignment.currentTotal()),
-                "required", text.formatNumber(assignment.requiredTotal()),
+                "current", text.formatNumber(progress.current()),
+                "required", text.formatNumber(progress.required()),
                 "percentage", Integer.toString((int) Math.floor(percentage)),
                 "progress_color", text.progressColor(percentage),
                 "objective", result.objectiveId());
