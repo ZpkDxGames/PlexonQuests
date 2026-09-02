@@ -437,7 +437,7 @@ public final class StorageService implements AutoCloseable {
         return submit(() -> transaction(() -> {
             persistDirty(snapshot.withState(state));
             insertHistory(assignment, state);
-            return null;
+            return (Void) null;
         })).whenComplete((ignored, failure) -> {
             if (failure != null) {
                 dirty.put(assignment.id(), snapshot.withState(state));
