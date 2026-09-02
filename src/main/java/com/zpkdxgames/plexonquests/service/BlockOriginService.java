@@ -38,6 +38,7 @@ public final class BlockOriginService implements Listener {
     private final JavaPlugin plugin;
     private final ConfigManager configs;
     private final NamespacedKey placedKey;
+    private final NamespacedKey sessionUnknownKey;
     private final Map<ChunkKey, OriginSet> chunks = new ConcurrentHashMap<>();
     private final List<BlockPosition> pendingRemovals = new ArrayList<>();
     private final AtomicBoolean removalScheduled = new AtomicBoolean();
@@ -46,6 +47,7 @@ public final class BlockOriginService implements Listener {
         this.plugin = plugin;
         this.configs = configs;
         this.placedKey = new NamespacedKey(plugin, "player_placed_blocks_v1");
+        this.sessionUnknownKey = new NamespacedKey(plugin, "origin_unknown_after_session_v1");
     }
 
     public void loadExistingChunks() {
@@ -61,7 +63,7 @@ public final class BlockOriginService implements Listener {
 
     public OriginResult origin(Block block) {
         if (mode() == BlockOriginMode.OFF) {
-            return new OriginResult(true, true);
+            return new OriginResult(false, false);
         }
         OriginSet set = chunks.get(ChunkKey.of(block.getChunk()));
         if (set == null || !set.known) {
@@ -143,6 +145,12 @@ public final class BlockOriginService implements Listener {
     @EventHandler(priority = EventPriority.MONITOR)
     public void onChunkUnload(ChunkUnloadEvent event) {
         ChunkKey key = ChunkKey.of(event.getChunk());
+        if (mode() == BlockOriginMode.SESSION) {
+            chunks.remove(key);
+            event.getChunk().getPersistentDataContainer().set(
+                    sessionUnknownKey, PersistentDataType.BYTE, (byte) 1);
+            return;
+        }
         OriginSet set = chunks.remove(key);
         if (set != null) {
             save(event.getChunk(), set);
@@ -150,11 +158,16 @@ public final class BlockOriginService implements Listener {
     }
 
     public void saveAll() {
-        if (mode() != BlockOriginMode.PERSISTENT_CHUNK) {
+        if (mode() == BlockOriginMode.OFF) {
             return;
         }
         for (World world : Bukkit.getWorlds()) {
             for (Chunk chunk : world.getLoadedChunks()) {
+                if (mode() == BlockOriginMode.SESSION) {
+                    chunk.getPersistentDataContainer().set(
+                            sessionUnknownKey, PersistentDataType.BYTE, (byte) 1);
+                    continue;
+                }
                 OriginSet set = chunks.get(ChunkKey.of(chunk));
                 if (set != null) {
                     save(chunk, set);
@@ -172,20 +185,25 @@ public final class BlockOriginService implements Listener {
             return;
         }
         OriginSet set = new OriginSet();
-        if (mode() == BlockOriginMode.PERSISTENT_CHUNK) {
-            byte[] encoded = chunk.getPersistentDataContainer().get(placedKey, PersistentDataType.BYTE_ARRAY);
-            if (encoded != null && encoded.length > 0) {
-                try {
-                    decode(encoded, set.positions);
-                } catch (IllegalArgumentException exception) {
-                    set.known = false;
-                    plugin.getLogger().log(
-                            Level.WARNING,
-                            "Invalid block-origin data in " + chunk.getWorld().getName() + " " + chunk.getX() + "," + chunk.getZ()
-                                    + "; natural-only tracking will fail closed",
-                            exception);
-                }
+        byte[] encoded = chunk.getPersistentDataContainer().get(placedKey, PersistentDataType.BYTE_ARRAY);
+        if (encoded != null && encoded.length > 0) {
+            try {
+                set.known = decode(encoded, set.positions);
+            } catch (IllegalArgumentException exception) {
+                set.known = false;
+                plugin.getLogger().log(
+                        Level.WARNING,
+                        "Invalid block-origin data in " + chunk.getWorld().getName() + " " + chunk.getX() + "," + chunk.getZ()
+                                + "; natural-only tracking will fail closed",
+                        exception);
             }
+        }
+        if (mode() == BlockOriginMode.SESSION
+                && chunk.getPersistentDataContainer().has(sessionUnknownKey, PersistentDataType.BYTE)) {
+            set.positions.clear();
+            set.known = false;
+        } else if (mode() == BlockOriginMode.PERSISTENT_CHUNK) {
+            chunk.getPersistentDataContainer().remove(sessionUnknownKey);
         }
         chunks.put(key, set);
     }
@@ -294,7 +312,7 @@ public final class BlockOriginService implements Listener {
         return ByteBuffer.allocate(8).order(ByteOrder.BIG_ENDIAN).putInt(FORMAT_VERSION).putInt(-1).array();
     }
 
-    private static void decode(byte[] encoded, LongOpenHashSet output) {
+    private static boolean decode(byte[] encoded, LongOpenHashSet output) {
         if (encoded.length < 8 || encoded.length % 4 != 0) {
             throw new IllegalArgumentException("Invalid encoded length");
         }
@@ -303,8 +321,11 @@ public final class BlockOriginService implements Listener {
             throw new IllegalArgumentException("Unsupported block-origin format");
         }
         int count = input.getInt();
-        if (count < 0) {
-            throw new IllegalArgumentException("Block-origin set was previously marked unknown");
+        if (count == -1) {
+            return false;
+        }
+        if (count < -1) {
+            throw new IllegalArgumentException("Invalid block-origin count");
         }
         if (count != input.remaining() / Integer.BYTES) {
             throw new IllegalArgumentException("Block-origin count does not match its payload");
@@ -312,6 +333,7 @@ public final class BlockOriginService implements Listener {
         for (int index = 0; index < count; index++) {
             output.add(Integer.toUnsignedLong(input.getInt()));
         }
+        return true;
     }
 
     public record OriginResult(boolean known, boolean natural) {}
@@ -334,4 +356,3 @@ public final class BlockOriginService implements Listener {
         }
     }
 }
-

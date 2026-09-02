@@ -26,13 +26,27 @@ public final class WeightedSelector {
         List<QuestDefinition> selected = new ArrayList<>(amount);
         Set<String> used = new HashSet<>();
         Map<String, Integer> categories = new HashMap<>();
+        Map<String, Integer> rarities = new HashMap<>();
+
+        for (Map.Entry<String, Integer> minimum : pool.minimumPerRarity().entrySet()) {
+            while (selected.size() < amount
+                    && rarities.getOrDefault(minimum.getKey(), 0) < minimum.getValue()) {
+                QuestDefinition chosen = choose(
+                        pool, definitions, random, excludedQuestIds, used, categories, rarities,
+                        quest -> quest.rarity().equals(minimum.getKey()) && eligible.test(quest));
+                if (chosen == null) {
+                    break;
+                }
+                add(chosen, selected, used, categories, rarities);
+            }
+        }
 
         for (String category : pool.guaranteedCategories()) {
             QuestDefinition chosen = choose(
-                    pool, definitions, random, excludedQuestIds, used, categories,
+                    pool, definitions, random, excludedQuestIds, used, categories, rarities,
                     quest -> quest.category().equals(category) && eligible.test(quest));
             if (chosen != null) {
-                add(chosen, selected, used, categories);
+                add(chosen, selected, used, categories, rarities);
             }
             if (selected.size() >= amount) {
                 return List.copyOf(selected);
@@ -41,11 +55,11 @@ public final class WeightedSelector {
 
         while (selected.size() < amount) {
             QuestDefinition chosen = choose(
-                    pool, definitions, random, excludedQuestIds, used, categories, eligible);
+                    pool, definitions, random, excludedQuestIds, used, categories, rarities, eligible);
             if (chosen == null) {
                 break;
             }
-            add(chosen, selected, used, categories);
+            add(chosen, selected, used, categories, rarities);
         }
         return List.copyOf(selected);
     }
@@ -57,6 +71,7 @@ public final class WeightedSelector {
             Set<String> excluded,
             Set<String> used,
             Map<String, Integer> categories,
+            Map<String, Integer> rarities,
             Predicate<QuestDefinition> eligible) {
         List<Candidate> candidates = new ArrayList<>();
         long total = 0L;
@@ -69,6 +84,10 @@ public final class WeightedSelector {
                 continue;
             }
             if (categories.getOrDefault(quest.category(), 0) >= pool.maximumPerCategory()) {
+                continue;
+            }
+            if (rarities.getOrDefault(quest.rarity(), 0)
+                    >= pool.maximumPerRarity().getOrDefault(quest.rarity(), Integer.MAX_VALUE)) {
                 continue;
             }
             int weight = Math.max(1, entry.getValue());
@@ -91,12 +110,13 @@ public final class WeightedSelector {
             QuestDefinition quest,
             List<QuestDefinition> selected,
             Set<String> used,
-            Map<String, Integer> categories) {
+            Map<String, Integer> categories,
+            Map<String, Integer> rarities) {
         selected.add(quest);
         used.add(quest.id());
         categories.merge(quest.category(), 1, Integer::sum);
+        rarities.merge(quest.rarity(), 1, Integer::sum);
     }
 
     private record Candidate(QuestDefinition quest, long cumulativeWeight) {}
 }
-

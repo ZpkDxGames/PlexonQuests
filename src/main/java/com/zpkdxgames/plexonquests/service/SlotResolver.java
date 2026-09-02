@@ -6,11 +6,21 @@ import org.bukkit.entity.Player;
 
 public final class SlotResolver {
     public int resolve(Player player, QuestScope scope, String rankCategory, PluginSettings settings) {
-        int base = switch (scope) {
+        int configuredBase = switch (scope) {
             case DAILY -> settings.assignments().baseDailySlots();
             case WEEKLY -> settings.assignments().baseWeeklySlots();
             case MILESTONE, MANUAL -> settings.assignments().maximumActiveManual();
         };
+        return resolve(player, scope, rankCategory, settings, configuredBase);
+    }
+
+    public int resolve(
+            Player player,
+            QuestScope scope,
+            String rankCategory,
+            PluginSettings settings,
+            int baseAssignments) {
+        int base = Math.max(0, baseAssignments);
         int maximum = switch (scope) {
             case DAILY -> settings.assignments().maximumDailySlots();
             case WEEKLY -> settings.assignments().maximumWeeklySlots();
@@ -38,4 +48,3 @@ public final class SlotResolver {
         return Math.max(0, Math.min(maximum, resolved));
     }
 }
-

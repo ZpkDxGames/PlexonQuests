@@ -9,6 +9,7 @@ import com.zpkdxgames.plexonquests.quest.QuestScope;
 import com.zpkdxgames.plexonquests.service.FeedbackPreferences;
 import com.zpkdxgames.plexonquests.util.AtomicFiles;
 import com.zpkdxgames.plexonquests.util.LogSanitizer;
+import com.zpkdxgames.plexonquests.util.Hashing;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -164,6 +165,18 @@ public final class StorageService implements AutoCloseable {
         "CREATE INDEX IF NOT EXISTS history_player_date ON quest_history(player_uuid, history_id DESC)",
         "INSERT OR REPLACE INTO schema_meta(key, value) VALUES ('schema_version', '1')"
     };
+    private static final String[] MIGRATION_V2 = {
+        """
+        CREATE TABLE IF NOT EXISTS contribution_tokens (
+          token_hash TEXT PRIMARY KEY,
+          player_uuid TEXT NOT NULL,
+          objective_type TEXT NOT NULL,
+          created_at INTEGER NOT NULL
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS contribution_tokens_created ON contribution_tokens(created_at)",
+        "INSERT OR REPLACE INTO schema_meta(key, value) VALUES ('schema_version', '2')"
+    };
 
     private final Path dataDirectory;
     private final Path databaseFile;
@@ -175,6 +188,7 @@ public final class StorageService implements AutoCloseable {
     private final AtomicBoolean flushScheduled = new AtomicBoolean();
     private final AtomicBoolean accepting = new AtomicBoolean();
     private final AtomicLong rejectedOperations = new AtomicLong();
+    private final AtomicLong uncertainClaims = new AtomicLong();
     private volatile Connection connection;
     private volatile Duration lastFlushDuration = Duration.ZERO;
     private volatile String lastFlushResult = "Never flushed";
@@ -218,6 +232,8 @@ public final class StorageService implements AutoCloseable {
                 statement.execute("PRAGMA busy_timeout=" + settings.busyTimeoutMillis());
             }
             migrate();
+            recoverInterruptedClaims();
+            maintenanceInternal();
             accepting.set(true);
             return null;
         });
@@ -308,6 +324,7 @@ public final class StorageService implements AutoCloseable {
 
     public CompletableFuture<Boolean> persistReroll(
             String transactionId, QuestAssignment previous, QuestAssignment replacement, double cost, String detail) {
+        DirtyAssignment previousDirty = dirty.remove(previous.id());
         return submit(() -> transaction(() -> {
             try (PreparedStatement cancel = connection.prepareStatement(
                     "UPDATE assignments SET state='CANCELLED' WHERE assignment_id=? AND state IN ('ACTIVE','COMPLETED')")) {
@@ -319,6 +336,7 @@ public final class StorageService implements AutoCloseable {
             if (!insertAssignmentRow(replacement)) {
                 throw new SQLException("Replacement assignment conflicted with existing data");
             }
+            insertHistory(previous, AssignmentState.CANCELLED);
             try (PreparedStatement statement = connection.prepareStatement(
                     """
                     INSERT INTO reroll_transactions(transaction_id, player_uuid, old_assignment_id,
@@ -334,9 +352,12 @@ public final class StorageService implements AutoCloseable {
                 statement.setLong(7, Instant.now().toEpochMilli());
                 statement.executeUpdate();
             }
-            dirty.remove(previous.id());
             return true;
-        }));
+        })).whenComplete((persisted, failure) -> {
+            if ((failure != null || !Boolean.TRUE.equals(persisted)) && previousDirty != null) {
+                dirty.putIfAbsent(previous.id(), previousDirty);
+            }
+        });
     }
 
     public CompletableFuture<Void> finishReroll(String transactionId, String status, String detail) {
@@ -388,6 +409,11 @@ public final class StorageService implements AutoCloseable {
                 replacementStatement.setString(1, replacement.id().toString());
                 replacementStatement.executeUpdate();
             }
+            try (PreparedStatement history = connection.prepareStatement(
+                    "DELETE FROM quest_history WHERE assignment_id=? AND state='CANCELLED'")) {
+                history.setString(1, previous.id().toString());
+                history.executeUpdate();
+            }
             try (PreparedStatement transaction = connection.prepareStatement(
                     "UPDATE reroll_transactions SET status='ROLLED_BACK', detail=? WHERE transaction_id=?")) {
                 transaction.setString(1, LogSanitizer.clean(detail));
@@ -403,6 +429,35 @@ public final class StorageService implements AutoCloseable {
             return;
         }
         dirty.put(assignment.id(), DirtyAssignment.capture(assignment));
+    }
+
+    public CompletableFuture<Void> archive(QuestAssignment assignment, AssignmentState state) {
+        DirtyAssignment snapshot = DirtyAssignment.capture(assignment);
+        dirty.remove(assignment.id());
+        return submit(() -> transaction(() -> {
+            persistDirty(snapshot.withState(state));
+            insertHistory(assignment, state);
+            return null;
+        })).whenComplete((ignored, failure) -> {
+            if (failure != null) {
+                dirty.put(assignment.id(), snapshot.withState(state));
+            }
+        });
+    }
+
+    public CompletableFuture<Boolean> reserveContributionToken(
+            UUID playerId, String objectiveType, String sourceToken) {
+        String tokenHash = Hashing.sha256(playerId + "|" + objectiveType + "|" + sourceToken);
+        return submit(() -> {
+            try (PreparedStatement statement = connection.prepareStatement(
+                    "INSERT OR IGNORE INTO contribution_tokens(token_hash,player_uuid,objective_type,created_at) VALUES(?,?,?,?)")) {
+                statement.setString(1, tokenHash);
+                statement.setString(2, playerId.toString());
+                statement.setString(3, LogSanitizer.clean(objectiveType));
+                statement.setLong(4, Instant.now().toEpochMilli());
+                return statement.executeUpdate() == 1;
+            }
+        });
     }
 
     public CompletableFuture<Integer> flushDirty() {
@@ -456,8 +511,9 @@ public final class StorageService implements AutoCloseable {
     }
 
     public CompletableFuture<Boolean> reserveClaim(String transactionId, QuestAssignment assignment) {
+        DirtyAssignment snapshot = DirtyAssignment.capture(assignment);
+        dirty.remove(assignment.id());
         return submit(() -> transaction(() -> {
-            DirtyAssignment snapshot = DirtyAssignment.capture(assignment);
             persistDirty(snapshot.withState(AssignmentState.COMPLETED));
             try (PreparedStatement update = connection.prepareStatement(
                     "UPDATE assignments SET state='CLAIMING' WHERE assignment_id=? AND state='COMPLETED'")) {
@@ -481,9 +537,12 @@ public final class StorageService implements AutoCloseable {
                 insert.setLong(6, now);
                 insert.executeUpdate();
             }
-            dirty.remove(assignment.id());
             return true;
-        })).exceptionally(failure -> {
+        })).whenComplete((reserved, failure) -> {
+            if (failure != null) {
+                dirty.put(assignment.id(), snapshot);
+            }
+        }).exceptionally(failure -> {
             if (rootCause(failure) instanceof SQLException sql && sql.getMessage().contains("UNIQUE")) {
                 return false;
             }
@@ -543,11 +602,13 @@ public final class StorageService implements AutoCloseable {
     public CompletableFuture<Void> uncertainClaim(String transactionId, QuestAssignment assignment, String detail) {
         return submit(() -> {
             try (PreparedStatement statement = connection.prepareStatement(
-                    "UPDATE claim_transactions SET status='UNCERTAIN', detail=?, updated_at=? WHERE transaction_id=?")) {
+                    "UPDATE claim_transactions SET status='UNCERTAIN', detail=?, updated_at=? WHERE transaction_id=? AND status<>'UNCERTAIN'")) {
                 statement.setString(1, LogSanitizer.clean(detail));
                 statement.setLong(2, Instant.now().toEpochMilli());
                 statement.setString(3, transactionId);
-                statement.executeUpdate();
+                if (statement.executeUpdate() == 1) {
+                    uncertainClaims.incrementAndGet();
+                }
             }
             return null;
         });
@@ -671,6 +732,13 @@ public final class StorageService implements AutoCloseable {
         });
     }
 
+    public CompletableFuture<Void> maintenance() {
+        return submit(() -> {
+            maintenanceInternal();
+            return null;
+        });
+    }
+
     public CompletableFuture<Path> backup(String fileName) {
         return submit(() -> {
             Path backups = dataDirectory.resolve("backups").normalize();
@@ -689,7 +757,6 @@ public final class StorageService implements AutoCloseable {
     }
 
     public StorageDiagnostics diagnostics() {
-        long uncertain = -1L;
         return new StorageDiagnostics(
                 accepting.get() && connection != null,
                 writer.getQueue().size(),
@@ -699,7 +766,7 @@ public final class StorageService implements AutoCloseable {
                 lastFlushResult,
                 lastFlushAt,
                 rejectedOperations.get(),
-                uncertain);
+                uncertainClaims.get());
     }
 
     private void migrate() throws SQLException, IOException {
@@ -707,7 +774,7 @@ public final class StorageService implements AutoCloseable {
         try (Statement statement = connection.createStatement(); ResultSet result = statement.executeQuery("PRAGMA user_version")) {
             version = result.next() ? result.getInt(1) : 0;
         }
-        if (version > 1) {
+        if (version > 2) {
             throw new SQLException("Database schema " + version + " is newer than this plugin supports");
         }
         if (version == 0) {
@@ -720,6 +787,71 @@ public final class StorageService implements AutoCloseable {
                 }
                 return null;
             });
+            version = 1;
+        }
+        if (version < 2) {
+            transaction(() -> {
+                try (Statement statement = connection.createStatement()) {
+                    for (String sql : MIGRATION_V2) {
+                        statement.execute(sql);
+                    }
+                    statement.execute("PRAGMA user_version=2");
+                }
+                return null;
+            });
+        }
+    }
+
+    private void recoverInterruptedClaims() throws SQLException, IOException {
+        transaction(() -> {
+            long now = Instant.now().toEpochMilli();
+            try (PreparedStatement statement = connection.prepareStatement(
+                    """
+                    UPDATE claim_transactions
+                    SET status='UNCERTAIN', detail='server stopped while delivery was reserved', updated_at=?
+                    WHERE status='RESERVED'
+                    """)) {
+                statement.setLong(1, now);
+                statement.executeUpdate();
+            }
+            return null;
+        });
+        refreshUncertainCount();
+    }
+
+    private void maintenanceInternal() throws SQLException {
+        long historyCutoff = Instant.now().minus(Duration.ofDays(settings.historyRetentionDays())).toEpochMilli();
+        try (PreparedStatement statement = connection.prepareStatement(
+                "DELETE FROM quest_history WHERE COALESCE(claimed_at,completed_at,assigned_at)<?")) {
+            statement.setLong(1, historyCutoff);
+            statement.executeUpdate();
+        }
+        try (PreparedStatement statement = connection.prepareStatement(
+                """
+                DELETE FROM quest_history WHERE history_id IN (
+                  SELECT history_id FROM (
+                    SELECT history_id,
+                      ROW_NUMBER() OVER (PARTITION BY player_uuid ORDER BY history_id DESC) AS position
+                    FROM quest_history
+                  ) WHERE position>?
+                )
+                """)) {
+            statement.setInt(1, settings.historyMaximumPerPlayer());
+            statement.executeUpdate();
+        }
+        try (PreparedStatement statement = connection.prepareStatement(
+                "DELETE FROM contribution_tokens WHERE created_at<?")) {
+            statement.setLong(1, Instant.now().minus(Duration.ofDays(30)).toEpochMilli());
+            statement.executeUpdate();
+        }
+        refreshUncertainCount();
+    }
+
+    private void refreshUncertainCount() throws SQLException {
+        try (Statement statement = connection.createStatement();
+                ResultSet result = statement.executeQuery(
+                        "SELECT COUNT(*) FROM claim_transactions WHERE status='UNCERTAIN'")) {
+            uncertainClaims.set(result.next() ? result.getLong(1) : 0L);
         }
     }
 

@@ -12,6 +12,7 @@ general:
   reload-success: "<green>Configuration reloaded: <white><quests></white> quests and <white><pools></white> pools active."
   reload-failed: "<red>Reload rejected. The previous configuration remains active. <gray>Use /quests validate for details."
   save-success: "<green>All dirty quest progress has been checkpointed."
+  backup-success: "<green>Created a consistent quest backup: <white><file></white>."
 
 quests:
   assigned: "<aqua>New <scope> quest: <white><quest_name>"

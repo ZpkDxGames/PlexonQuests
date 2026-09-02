@@ -77,7 +77,15 @@ public final class AssignmentService {
         if (assignment == null || !assignment.cancel()) {
             return false;
         }
-        storage.markDirty(assignment);
+        if (profile.pinnedAssignment().filter(assignmentId::equals).isPresent()) {
+            profile.pinnedAssignment(null);
+            persistPinRemoval(profile);
+        }
+        storage.archive(assignment, com.zpkdxgames.plexonquests.quest.AssignmentState.CANCELLED)
+                .exceptionally(failure -> {
+                    plugin.getLogger().log(java.util.logging.Level.SEVERE, "Could not archive cancelled quest", failure);
+                    return null;
+                });
         progress.reindex(profile);
         return true;
     }
@@ -90,5 +98,14 @@ public final class AssignmentService {
         storage.markDirty(assignment);
         progress.reindex(profile);
         return true;
+    }
+
+    private void persistPinRemoval(PlayerProfile profile) {
+        storage.savePreferences(
+                        profile.playerId(), profile.latestName(), profile.preferences(), profile.pinnedAssignment().orElse(null))
+                .exceptionally(failure -> {
+                    plugin.getLogger().log(java.util.logging.Level.WARNING, "Could not persist quest pin removal", failure);
+                    return null;
+                });
     }
 }

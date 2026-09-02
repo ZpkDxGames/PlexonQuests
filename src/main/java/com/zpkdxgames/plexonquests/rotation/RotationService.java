@@ -17,6 +17,7 @@ import java.time.Instant;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.logging.Level;
 import org.bukkit.Bukkit;
@@ -61,14 +62,27 @@ public final class RotationService {
             return;
         }
         var snapshot = configs.snapshot();
+        UUID pinnedBeforeExpiry = profile.pinnedAssignment().orElse(null);
         List<QuestAssignment> expired = profile.expirePast(
                 Instant.now(), snapshot.settings().rotation().claimGrace());
         for (QuestAssignment assignment : expired) {
-            storage.markDirty(assignment);
+            storage.archive(assignment, com.zpkdxgames.plexonquests.quest.AssignmentState.EXPIRED)
+                    .exceptionally(failure -> {
+                        plugin.getLogger().log(Level.SEVERE, "Could not archive expired quest", failure);
+                        return null;
+                    });
             Bukkit.getPluginManager().callEvent(new QuestExpireEvent(
                     player, assignment.id(), assignment.definition().id()));
         }
         if (!expired.isEmpty()) {
+            if (pinnedBeforeExpiry != null && profile.pinnedAssignment().isEmpty()) {
+                storage.savePreferences(
+                                profile.playerId(), profile.latestName(), profile.preferences(), null)
+                        .exceptionally(failure -> {
+                            plugin.getLogger().log(Level.WARNING, "Could not persist expired quest pin removal", failure);
+                            return null;
+                        });
+            }
             progress.reindex(profile);
         }
         seedFuture.whenComplete((seed, failure) -> Bukkit.getScheduler().runTask(plugin, () -> {
@@ -93,11 +107,8 @@ public final class RotationService {
             return;
         }
         for (QuestAssignment assignment : profile.assignments(scope)) {
-            if (assignment.cancel()) {
-                storage.markDirty(assignment);
-            }
+            assignments.cancel(profile, assignment.id());
         }
-        progress.reindex(profile);
         ensureRotating(player, profile, scope);
     }
 
@@ -105,18 +116,20 @@ public final class RotationService {
         var snapshot = configs.snapshot();
         PeriodKeyService periods = new PeriodKeyService(snapshot.settings().rotation());
         RotationPeriod period = periods.period(scope, Instant.now());
-        int limit = slots.resolve(player, scope, profile.rankCategory(), snapshot.settings());
-        List<QuestAssignment> current = profile.assignments(scope, period.key());
-        int missing = Math.max(0, limit - current.size());
-        if (missing == 0) {
-            return;
-        }
         PoolDefinition pool = snapshot.registry().pools().values().stream()
                 .filter(PoolDefinition::enabled)
                 .filter(candidate -> candidate.scope() == scope)
+                .filter(candidate -> eligibility.evaluate(player, profile, candidate).eligible())
                 .findFirst()
                 .orElse(null);
         if (pool == null) {
+            return;
+        }
+        int limit = slots.resolve(
+                player, scope, profile.rankCategory(), snapshot.settings(), pool.baseAssignments());
+        List<QuestAssignment> current = profile.assignments(scope, period.key());
+        int missing = Math.max(0, limit - current.size());
+        if (missing == 0) {
             return;
         }
         Set<String> currentIds = current.stream()

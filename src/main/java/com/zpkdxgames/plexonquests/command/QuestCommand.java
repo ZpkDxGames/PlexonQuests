@@ -22,6 +22,8 @@ import com.zpkdxgames.plexonquests.service.PlayerProfile;
 import com.zpkdxgames.plexonquests.service.ProfileService;
 import com.zpkdxgames.plexonquests.service.ProgressService;
 import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashSet;
@@ -46,7 +48,7 @@ public final class QuestCommand implements CommandExecutor, TabCompleter {
     private static final List<String> ROOTS = List.of(
             "daily", "weekly", "milestones", "pinned", "history", "claim", "reroll", "settings", "info",
             "admin", "reload", "validate", "assign", "cancel", "progress", "complete", "reset", "rotate",
-            "save", "diagnostics");
+            "save", "backup", "diagnostics");
 
     private final JavaPlugin plugin;
     private final ConfigManager configs;
@@ -124,6 +126,7 @@ public final class QuestCommand implements CommandExecutor, TabCompleter {
                 case "reset" -> reset(sender, args);
                 case "rotate" -> rotate(sender, args);
                 case "save" -> save(sender);
+                case "backup" -> backup(sender);
                 case "diagnostics" -> diagnostics(sender);
                 default -> usage(sender, "/quests [daily|weekly|milestones|history|settings|info]");
             };
@@ -290,7 +293,7 @@ public final class QuestCommand implements CommandExecutor, TabCompleter {
             sender.sendMessage(text.message("quests.unavailable", Map.of("reason", "manual assignment limit")));
             return true;
         }
-        assignments.add(target, profile, definition, "", "manual", Instant.now(), null)
+        assignments.add(target, profile, definition, "", "manual:" + UUID.randomUUID(), Instant.now(), null)
                 .whenComplete((added, failure) -> Bukkit.getScheduler().runTask(plugin, () -> {
                     if (failure != null || !Boolean.TRUE.equals(added)) {
                         sender.sendMessage(text.message("general.internal-error", Map.of()));
@@ -442,6 +445,28 @@ public final class QuestCommand implements CommandExecutor, TabCompleter {
         return true;
     }
 
+    private boolean backup(CommandSender sender) {
+        if (!allowed(sender, "plexonquests.admin.backup")) {
+            return true;
+        }
+        String timestamp = DateTimeFormatter.ofPattern("uuuuMMdd-HHmmss")
+                .withZone(ZoneOffset.UTC)
+                .format(Instant.now());
+        String fileName = "plexonquests-" + timestamp + ".db";
+        storage.flushDirty()
+                .thenCompose(ignored -> storage.backup(fileName))
+                .whenComplete((path, failure) -> Bukkit.getScheduler().runTask(plugin, () -> {
+                    if (failure != null) {
+                        plugin.getLogger().log(java.util.logging.Level.WARNING, "Quest backup failed", failure);
+                        sender.sendMessage(text.message("general.internal-error", Map.of()));
+                    } else {
+                        sender.sendMessage(text.message(
+                                "general.backup-success", Map.of("file", path.getFileName().toString())));
+                    }
+                }));
+        return true;
+    }
+
     private boolean diagnostics(CommandSender sender) {
         if (!allowed(sender, "plexonquests.admin.diagnostics")) {
             return true;
@@ -460,6 +485,7 @@ public final class QuestCommand implements CommandExecutor, TabCompleter {
                 "<gray>Writer queue <white>" + state.queueDepth() + "<dark_gray>/</dark_gray><white>" + state.queueCapacity(),
                 "<gray>Last flush <white>" + state.lastFlushResult() + " <dark_gray>(" + state.lastFlushDuration().toMillis() + "ms)",
                 "<gray>Rejected writes <white>" + state.rejectedOperations(),
+                "<gray>Uncertain claims <white>" + state.uncertainClaims(),
                 "<gray>Origin chunks/positions <white>" + origins.loadedChunkCount() + "<dark_gray>/</dark_gray><white>" + origins.trackedPositionCount(),
                 "<gray>Invalid definitions <white>" + configs.snapshot().registry().errorCount());
         lines.forEach(line -> sender.sendMessage(text.parse(line)));
@@ -519,6 +545,7 @@ public final class QuestCommand implements CommandExecutor, TabCompleter {
             case "reset" -> sender.hasPermission("plexonquests.admin.reset");
             case "rotate" -> sender.hasPermission("plexonquests.admin.rotate");
             case "save" -> sender.hasPermission("plexonquests.admin.save");
+            case "backup" -> sender.hasPermission("plexonquests.admin.backup");
             case "diagnostics" -> sender.hasPermission("plexonquests.admin.diagnostics");
             default -> true;
         };

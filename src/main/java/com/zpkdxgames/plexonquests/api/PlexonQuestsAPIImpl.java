@@ -88,7 +88,8 @@ public final class PlexonQuestsAPIImpl implements PlexonQuestsAPI {
             if (player == null || profile == null || definition == null || definition.scope() != QuestScope.MANUAL) {
                 return CompletableFuture.completedFuture(false);
             }
-            return assignments.add(player, profile, definition, "", "manual", Instant.now(), null);
+            return assignments.add(
+                    player, profile, definition, "", "manual:" + UUID.randomUUID(), Instant.now(), null);
         }).thenCompose(future -> future);
     }
 
@@ -116,10 +117,10 @@ public final class PlexonQuestsAPIImpl implements PlexonQuestsAPI {
                         "",
                         "",
                         external.sourceToken());
-                progress.contribute(player, contribution);
+                return progress.contributeAsync(player, contribution);
             }
-            return null;
-        });
+            return CompletableFuture.completedFuture(false);
+        }).thenCompose(future -> future).thenApply(ignored -> null);
     }
 
     @Override

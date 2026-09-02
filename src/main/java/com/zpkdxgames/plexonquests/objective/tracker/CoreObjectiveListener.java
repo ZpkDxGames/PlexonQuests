@@ -210,8 +210,13 @@ public final class CoreObjectiveListener implements Listener {
         if (item == null || item.getType().isAir()) {
             return;
         }
+        int amount = removedAmount(
+                event.getAction(), item, event.getCursor(), inventoryCapacity(player, item));
+        if (amount <= 0) {
+            return;
+        }
         progress.contribute(player, itemContribution(
-                ObjectiveType.BREW_POTION, player, item.getType(), item.getAmount()));
+                ObjectiveType.BREW_POTION, player, item.getType(), amount));
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
@@ -393,5 +398,20 @@ public final class CoreObjectiveListener implements Listener {
                 || action == InventoryAction.MOVE_TO_OTHER_INVENTORY
                 || action == InventoryAction.HOTBAR_SWAP
                 || action == InventoryAction.HOTBAR_MOVE_AND_READD;
+    }
+
+    static int removedAmount(InventoryAction action, ItemStack clicked, ItemStack cursor, int shiftCapacity) {
+        int available = clicked.getAmount();
+        return switch (action) {
+            case PICKUP_ONE -> Math.min(1, available);
+            case PICKUP_HALF -> Math.min((available + 1) / 2, available);
+            case PICKUP_SOME -> {
+                int held = cursor == null || cursor.getType().isAir() ? 0 : cursor.getAmount();
+                yield Math.min(available, Math.max(0, clicked.getMaxStackSize() - held));
+            }
+            case MOVE_TO_OTHER_INVENTORY -> Math.min(available, Math.max(0, shiftCapacity));
+            case PICKUP_ALL, HOTBAR_SWAP, HOTBAR_MOVE_AND_READD -> available;
+            default -> 0;
+        };
     }
 }

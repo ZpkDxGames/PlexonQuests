@@ -57,6 +57,7 @@ permissions:
       plexonquests.admin.reset: true
       plexonquests.admin.rotate: true
       plexonquests.admin.save: true
+      plexonquests.admin.backup: true
       plexonquests.admin.diagnostics: true
   plexonquests.admin.gui:
     default: op
@@ -78,6 +79,8 @@ permissions:
     default: op
   plexonquests.admin.save:
     default: op
+  plexonquests.admin.backup:
+    default: op
   plexonquests.admin.diagnostics:
     default: op
   plexonquests.bypass.eligibility:
@@ -86,4 +89,3 @@ permissions:
     default: false
   plexonquests.bypass.slot-limit:
     default: false
-

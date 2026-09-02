@@ -101,6 +101,27 @@ public final class DefinitionLoader {
             return false;
         });
 
+        pools.entrySet().removeIf(entry -> {
+            PoolDefinition pool = entry.getValue();
+            List<String> unavailable = pool.questWeights().keySet().stream()
+                    .filter(id -> !quests.containsKey(id))
+                    .toList();
+            Set<String> constrainedRarities = new LinkedHashSet<>(pool.minimumPerRarity().keySet());
+            constrainedRarities.addAll(pool.maximumPerRarity().keySet());
+            List<String> unknownRarities = constrainedRarities.stream()
+                    .filter(id -> !rarities.containsKey(id))
+                    .toList();
+            if (!unavailable.isEmpty()) {
+                error(pool.source() + ".quests", "Pool references quarantined quests: " + String.join(", ", unavailable));
+                return true;
+            }
+            if (!unknownRarities.isEmpty()) {
+                error(pool.source() + ".mix", "Unknown rarity constraints: " + String.join(", ", unknownRarities));
+                return true;
+            }
+            return false;
+        });
+
         return new QuestRegistrySnapshot(quests, pools, rarities, issues, Instant.now());
     }
 
@@ -186,10 +207,13 @@ public final class DefinitionLoader {
                     DurationParser.parse(yaml.getString("recent-history-exclusion", "0d")),
                     mix == null ? List.of() : lowerList(mix.getStringList("guaranteed-categories")),
                     mix == null ? Integer.MAX_VALUE : mix.getInt("maximum-per-category", Integer.MAX_VALUE),
+                    mix == null ? Map.of() : rarityCounts(mix.getConfigurationSection("minimum-per-rarity"), location),
+                    mix == null ? Map.of() : rarityCounts(mix.getConfigurationSection("maximum-per-rarity"), location),
                     lowerSet(yaml.getStringList("eligibility.required-permissions")),
                     lowerSet(yaml.getStringList("eligibility.blocked-permissions")),
                     lowerSet(yaml.getStringList("eligibility.rank-categories")),
                     Set.copyOf(yaml.getStringList("eligibility.worlds")),
+                    Set.copyOf(yaml.getStringList("eligibility.excluded-worlds")),
                     requiredIntegrations,
                     weights,
                     location);
@@ -519,6 +543,21 @@ public final class DefinitionLoader {
         return values.stream().map(value -> value.toUpperCase(Locale.ROOT)).collect(java.util.stream.Collectors.toUnmodifiableSet());
     }
 
+    private static Map<String, Integer> rarityCounts(ConfigurationSection section, String path) {
+        if (section == null) {
+            return Map.of();
+        }
+        Map<String, Integer> output = new LinkedHashMap<>();
+        for (String raw : section.getKeys(false)) {
+            int count = section.getInt(raw, -1);
+            if (count < 0) {
+                throw invalid(path + ".mix." + section.getName() + "." + raw, "must be zero or greater");
+            }
+            output.put(raw.toUpperCase(Locale.ROOT), count);
+        }
+        return output;
+    }
+
     private static IllegalArgumentException invalid(String path, String message) {
         return new IllegalArgumentException(path + ": " + message);
     }
@@ -527,4 +566,3 @@ public final class DefinitionLoader {
         issues.add(new ValidationIssue(ValidationIssue.Severity.ERROR, path, message));
     }
 }
-

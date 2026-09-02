@@ -143,6 +143,10 @@ public final class RewardService {
                     PlayerProfile profile = profiles.profile(player.getUniqueId()).orElse(null);
                     if (profile != null) {
                         profile.incrementCompletedTotal();
+                        if (profile.pinnedAssignment().filter(assignment.id()::equals).isPresent()) {
+                            profile.pinnedAssignment(null);
+                            profiles.persistPreferences(profile);
+                        }
                         progress.reindex(profile);
                     }
                     if (current != null) {

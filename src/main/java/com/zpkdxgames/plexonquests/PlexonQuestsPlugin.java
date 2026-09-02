@@ -190,6 +190,11 @@ public final class PlexonQuestsPlugin extends JavaPlugin {
             return null;
         }), checkpointTicks, checkpointTicks);
 
+        Bukkit.getScheduler().runTaskTimerAsynchronously(this, () -> storage.maintenance().exceptionally(failure -> {
+            getLogger().log(Level.WARNING, "Scheduled quest storage maintenance failed", failure);
+            return null;
+        }), 1_728_000L, 1_728_000L);
+
         Bukkit.getScheduler().runTaskTimer(this, () -> Bukkit.getOnlinePlayers().forEach(player ->
                 profiles.profile(player).ifPresent(profile -> rotations.ensure(player, profile))), 1_200L, 1_200L);
     }
@@ -243,8 +248,8 @@ public final class PlexonQuestsPlugin extends JavaPlugin {
             }
             configExecutor = null;
         }
+        Bukkit.getServicesManager().unregisterAll(this);
         if (started) {
-            Bukkit.getServicesManager().unregisterAll(this);
             started = false;
             getLogger().info("PlexonQuests disabled after flushing persistent state.");
         }

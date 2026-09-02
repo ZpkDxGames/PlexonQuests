@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
@@ -62,27 +63,73 @@ public final class ProgressService {
     }
 
     public void contribute(Player player, Contribution contribution) {
+        contributeAsync(player, contribution).exceptionally(failure -> {
+            plugin.getLogger().log(java.util.logging.Level.WARNING, "Quest contribution failed closed", failure);
+            return false;
+        });
+    }
+
+    public CompletableFuture<Boolean> contributeAsync(Player player, Contribution contribution) {
         if (!Bukkit.isPrimaryThread()) {
             UUID playerId = player.getUniqueId();
+            CompletableFuture<Boolean> future = new CompletableFuture<>();
             Bukkit.getScheduler().runTask(plugin, () -> {
                 Player current = Bukkit.getPlayer(playerId);
                 if (current != null) {
-                    contribute(current, contribution);
+                    contributeAsync(current, contribution).whenComplete((accepted, failure) -> {
+                        if (failure == null) {
+                            future.complete(accepted);
+                        } else {
+                            future.completeExceptionally(failure);
+                        }
+                    });
+                } else {
+                    future.complete(false);
                 }
             });
-            return;
+            return future;
         }
         PlayerObjectiveIndex index = indexes.get(player.getUniqueId());
         if (index == null) {
-            return;
+            return CompletableFuture.completedFuture(false);
         }
-        if (!contribution.sourceToken().isBlank()
-                && !sourceTokens.computeIfAbsent(player.getUniqueId(), ignored -> new SourceTokens())
-                        .accept(contribution.type() + ":" + contribution.sourceToken(), System.nanoTime())) {
-            return;
+        if (!contribution.sourceToken().isBlank()) {
+            String memoryToken = contribution.type() + ":" + contribution.sourceToken();
+            if (!sourceTokens.computeIfAbsent(player.getUniqueId(), ignored -> new SourceTokens())
+                    .accept(memoryToken, System.nanoTime())) {
+                return CompletableFuture.completedFuture(false);
+            }
+            UUID playerId = player.getUniqueId();
+            SourceTokens tokens = sourceTokens.get(player.getUniqueId());
+            return storage.reserveContributionToken(
+                            playerId, contribution.type().name(), contribution.sourceToken())
+                    .thenCompose(reserved -> {
+                        if (!reserved) {
+                            return CompletableFuture.completedFuture(false);
+                        }
+                        CompletableFuture<Boolean> applied = new CompletableFuture<>();
+                        Bukkit.getScheduler().runTask(plugin, () -> {
+                            Player current = Bukkit.getPlayer(playerId);
+                            applied.complete(current != null && apply(current, withoutSourceToken(contribution)));
+                        });
+                        return applied;
+                    }).whenComplete((accepted, failure) -> {
+                        if (failure != null && tokens != null) {
+                            tokens.forget(memoryToken);
+                        }
+                    });
+        }
+        return CompletableFuture.completedFuture(apply(player, contribution));
+    }
+
+    private boolean apply(Player player, Contribution contribution) {
+        PlayerObjectiveIndex index = indexes.get(player.getUniqueId());
+        if (index == null) {
+            return false;
         }
         boolean multiQuest = configs.snapshot().settings().assignments().multiQuestProgress();
         boolean[] acceptedAny = {false};
+        boolean[] reindex = {false};
         index.forEachCandidate(contribution, handle -> {
             if (acceptedAny[0] && !multiQuest) {
                 return;
@@ -114,6 +161,7 @@ public final class ProgressService {
             storage.markDirty(assignment);
             observer.onProgress(player, assignment, result);
             if (result.objectiveCompleted()) {
+                reindex[0] = true;
                 Bukkit.getPluginManager().callEvent(new QuestObjectiveCompleteEvent(
                         player, assignment.id(), assignment.definition().id(), result.objectiveId()));
             }
@@ -122,6 +170,18 @@ public final class ProgressService {
                         new QuestCompleteEvent(player, assignment.id(), assignment.definition().id()));
             }
         });
+        if (reindex[0]) {
+            profiles.profile(player).ifPresent(this::reindex);
+        }
+        return acceptedAny[0];
+    }
+
+    private static Contribution withoutSourceToken(Contribution value) {
+        return new Contribution(
+                value.type(), value.amount(), value.material(), value.entityType(), value.damageCause(), value.spawnReason(),
+                value.world(), value.worldEnvironment(), value.gameMode(), value.originKnown(), value.natural(),
+                value.mature(), value.hostile(), value.teleport(), value.unique(), value.movementType(),
+                value.advancementKey(), "");
     }
 
     private static final class SourceTokens {
@@ -129,7 +189,7 @@ public final class ProgressService {
         private static final long RETENTION_NANOS = java.time.Duration.ofHours(1).toNanos();
         private final java.util.LinkedHashMap<String, Long> seen = new java.util.LinkedHashMap<>();
 
-        private boolean accept(String token, long now) {
+        private synchronized boolean accept(String token, long now) {
             Long previous = seen.get(token);
             if (previous != null && now - previous <= RETENTION_NANOS) {
                 return false;
@@ -142,6 +202,10 @@ public final class ProgressService {
                 seen.entrySet().removeIf(entry -> now - entry.getValue() > RETENTION_NANOS);
             }
             return true;
+        }
+
+        private synchronized void forget(String token) {
+            seen.remove(token);
         }
     }
 

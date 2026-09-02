@@ -102,7 +102,7 @@ public final class PlayerProfile {
 
     public synchronized List<QuestAssignment> visibleAssignments() {
         return assignments.values().stream()
-                .filter(assignment -> assignment.state() != AssignmentState.CANCELLED)
+                .filter(assignment -> !assignment.state().terminal())
                 .toList();
     }
 
@@ -131,6 +131,9 @@ public final class PlayerProfile {
                 java.time.Instant deadline = assignment.state() == AssignmentState.COMPLETED ? expiry.plus(grace) : expiry;
                 if (now.isAfter(deadline) && assignment.expire()) {
                     expired.add(assignment);
+                    if (assignment.id().equals(pinnedAssignment)) {
+                        pinnedAssignment = null;
+                    }
                 }
             });
         }

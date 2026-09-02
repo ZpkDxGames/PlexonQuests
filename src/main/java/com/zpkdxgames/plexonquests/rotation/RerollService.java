@@ -92,7 +92,7 @@ public final class RerollService {
                 return;
             }
             PoolDefinition pool = pool(assignment);
-            if (pool == null) {
+            if (pool == null || !eligibility.evaluate(player, profile, pool).eligible()) {
                 Bukkit.getScheduler().runTask(plugin, () ->
                         player.sendMessage(text.message("rerolls.unavailable", Map.of())));
                 return;
