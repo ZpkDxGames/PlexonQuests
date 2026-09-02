@@ -24,7 +24,7 @@ class QuestAssignmentTest {
 
         ProgressResult second = assignment.addProgress("objective_2", 99L, START.plusSeconds(2));
         assertTrue(second.questCompleted());
-        assertEquals(3L, second.current());
+        assertEquals(3L, second.newValue());
         assertEquals(AssignmentState.COMPLETED, assignment.state());
         assertEquals(100D, assignment.percentage());
     }
