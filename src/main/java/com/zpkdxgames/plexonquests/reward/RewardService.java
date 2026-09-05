@@ -4,6 +4,7 @@ import com.zpkdxgames.plexonquests.config.ConfigManager;
 import com.zpkdxgames.plexonquests.config.OverflowPolicy;
 import com.zpkdxgames.plexonquests.event.QuestClaimUncertainEvent;
 import com.zpkdxgames.plexonquests.event.QuestClaimedEvent;
+import com.zpkdxgames.plexonquests.event.QuestExpireEvent;
 import com.zpkdxgames.plexonquests.event.QuestPreClaimEvent;
 import com.zpkdxgames.plexonquests.integration.EconomyBridge;
 import com.zpkdxgames.plexonquests.integration.PermissionBridge;
@@ -19,6 +20,7 @@ import com.zpkdxgames.plexonquests.service.ProfileService;
 import com.zpkdxgames.plexonquests.service.ProgressService;
 import com.zpkdxgames.plexonquests.util.Hashing;
 import com.zpkdxgames.plexonquests.util.LogSanitizer;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
@@ -71,6 +73,10 @@ public final class RewardService {
                     claim(current, assignment);
                 }
             });
+            return;
+        }
+        if (assignment.state() == AssignmentState.COMPLETED && claimDeadlinePassed(assignment, Instant.now())) {
+            expireBeforeClaim(player, assignment);
             return;
         }
         if (assignment.state() != AssignmentState.COMPLETED) {
@@ -167,6 +173,32 @@ public final class RewardService {
         player.sendMessage(text.message("claims.uncertain", Map.of("transaction", transactionId)));
         Bukkit.getPluginManager().callEvent(new QuestClaimUncertainEvent(
                 player, assignment.id(), assignment.definition().id(), transactionId, detail));
+    }
+
+    private boolean claimDeadlinePassed(QuestAssignment assignment, Instant now) {
+        return assignment.expiresAt()
+                .map(expiry -> now.isAfter(expiry.plus(configs.snapshot().settings().rotation().claimGrace())))
+                .orElse(false);
+    }
+
+    private void expireBeforeClaim(Player player, QuestAssignment assignment) {
+        if (!assignment.expire()) {
+            return;
+        }
+        PlayerProfile profile = profiles.profile(player).orElse(null);
+        if (profile != null) {
+            if (profile.pinnedAssignment().filter(assignment.id()::equals).isPresent()) {
+                profile.pinnedAssignment(null);
+                profiles.persistPreferences(profile);
+            }
+            progress.reindex(profile);
+        }
+        storage.archive(assignment, AssignmentState.EXPIRED).exceptionally(failure -> {
+            plugin.getLogger().log(Level.SEVERE, "Could not archive expired quest before claim", failure);
+            return null;
+        });
+        Bukkit.getPluginManager().callEvent(
+                new QuestExpireEvent(player, assignment.id(), assignment.definition().id()));
     }
 
     private DeliveryPlan plan(QuestAssignment assignment) {

@@ -116,7 +116,7 @@ public final class PlayerProfile {
         return assignments.values().stream()
                 .filter(assignment -> assignment.definition().scope() == scope)
                 .filter(assignment -> assignment.periodKey().equals(periodKey))
-                .filter(assignment -> !assignment.state().terminal())
+                .filter(assignment -> assignment.state().occupiesRotationSlot())
                 .toList();
     }
 

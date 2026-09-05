@@ -1,0 +1,23 @@
+schema-version: 1
+id: quest-champion
+revision: 1
+enabled: true
+scope: MILESTONE
+category: progression
+rarity: EPIC
+weight: 1
+eligibility: {required-permission: "", blocked-permissions: [], rank-categories: [], worlds: [], required-integrations: []}
+display:
+  icon: {material: BEACON, amount: 1, glow-when-complete: true}
+  name: "<gradient:#C850C0:#FF7EB3><bold>Quest Champion</bold></gradient>"
+  short-description: "Claim two hundred quest rewards."
+completion-mode: ALL
+claim-mode: MANUAL
+objectives:
+  claims: {type: QUESTS_CLAIMED, amount: 200, display: "Quests claimed", filters: {}}
+rewards:
+  mode: ALL
+  entries:
+    experience: {type: EXPERIENCE_POINTS, amount: 7000, display: "<aqua>7,000 experience points"}
+effects: {use-rarity-defaults: true, claim: quest-claim}
+

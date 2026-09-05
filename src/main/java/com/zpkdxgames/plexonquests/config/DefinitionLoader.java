@@ -48,10 +48,18 @@ import org.bukkit.event.entity.EntityDamageEvent;
 
 public final class DefinitionLoader {
     private final Path dataDirectory;
+    private final Duration defaultHistoryExclusion;
     private final List<ValidationIssue> issues = new ArrayList<>();
 
     public DefinitionLoader(Path dataDirectory) {
+        this(dataDirectory, Duration.ZERO);
+    }
+
+    public DefinitionLoader(Path dataDirectory, Duration defaultHistoryExclusion) {
         this.dataDirectory = dataDirectory.toAbsolutePath().normalize();
+        this.defaultHistoryExclusion = defaultHistoryExclusion == null
+                ? Duration.ZERO
+                : defaultHistoryExclusion;
     }
 
     public QuestRegistrySnapshot load() {
@@ -88,6 +96,18 @@ public final class DefinitionLoader {
             if (wrongScope) {
                 error(pool.source() + ".quests", "Every pool quest must use the pool scope");
                 return true;
+            }
+            Set<String> categories = pool.questWeights().keySet().stream()
+                    .map(quests::get)
+                    .map(QuestDefinition::category)
+                    .collect(java.util.stream.Collectors.toSet());
+            List<String> missingCategories = pool.guaranteedCategories().stream()
+                    .filter(category -> !categories.contains(category))
+                    .toList();
+            if (!missingCategories.isEmpty()) {
+                warning(
+                        pool.source() + ".mix.guaranteed-categories",
+                        "No pool quest uses categories: " + String.join(", ", missingCategories));
             }
             return false;
         });
@@ -197,14 +217,20 @@ public final class DefinitionLoader {
                 }
                 weights.put(questId, weight);
             }
+            if (weights.isEmpty()) {
+                throw invalid(location + ".quests", "at least one quest is required");
+            }
             Set<String> requiredIntegrations = upperSet(yaml.getStringList("eligibility.required-integrations"));
+            Duration historyExclusion = yaml.contains("recent-history-exclusion")
+                    ? DurationParser.parse(yaml.getString("recent-history-exclusion", "0d"))
+                    : defaultHistoryExclusion;
             PoolDefinition pool = new PoolDefinition(
                     id,
                     yaml.getBoolean("enabled", true),
                     scope,
                     Math.max(0, yaml.getInt("base-assignments", 0)),
                     yaml.getBoolean("prevent-duplicates", true),
-                    DurationParser.parse(yaml.getString("recent-history-exclusion", "0d")),
+                    historyExclusion,
                     mix == null ? List.of() : lowerList(mix.getStringList("guaranteed-categories")),
                     mix == null ? Integer.MAX_VALUE : mix.getInt("maximum-per-category", Integer.MAX_VALUE),
                     mix == null ? Map.of() : rarityCounts(mix.getConfigurationSection("minimum-per-rarity"), location),
@@ -564,5 +590,9 @@ public final class DefinitionLoader {
 
     private void error(String path, String message) {
         issues.add(new ValidationIssue(ValidationIssue.Severity.ERROR, path, message));
+    }
+
+    private void warning(String path, String message) {
+        issues.add(new ValidationIssue(ValidationIssue.Severity.WARNING, path, message));
     }
 }

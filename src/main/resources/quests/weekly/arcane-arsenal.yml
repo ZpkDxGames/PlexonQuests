@@ -1,0 +1,24 @@
+schema-version: 1
+id: arcane-arsenal
+revision: 1
+enabled: true
+scope: WEEKLY
+category: enchanting
+rarity: RARE
+weight: 8
+eligibility: {required-permission: "", blocked-permissions: [], rank-categories: [], worlds: [], required-integrations: []}
+display:
+  icon: {material: ENCHANTED_BOOK, amount: 1, glow-when-complete: true}
+  name: "<gradient:#C850C0:#92E1FF><bold>Arcane Arsenal</bold></gradient>"
+  short-description: "Enchant a collection of equipment over the week."
+completion-mode: ALL
+claim-mode: MANUAL
+objectives:
+  enchanted_items: {type: ENCHANT_ITEM, amount: 18, display: "Items enchanted", filters: {game-modes: [SURVIVAL]}}
+rewards:
+  mode: ALL
+  entries:
+    experience: {type: EXPERIENCE_POINTS, amount: 1300, display: "<aqua>1,300 experience points"}
+    lapis: {type: ITEM, material: LAPIS_LAZULI, amount: 16, display: "<blue>16 Lapis Lazuli"}
+effects: {use-rarity-defaults: true, claim: quest-claim}
+

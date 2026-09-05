@@ -1,4 +1,5 @@
 schema-version: 1
+catalog-version: 2
 id: weekly
 enabled: true
 scope: WEEKLY
@@ -8,6 +9,10 @@ recent-history-exclusion: 21d
 mix:
   guaranteed-categories: []
   maximum-per-category: 1
+  minimum-per-rarity:
+    RARE: 1
+  maximum-per-rarity:
+    EPIC: 2
 quests:
   deep-delver: 12
   master-angler: 9
@@ -15,4 +20,9 @@ quests:
   hunters-ledger: 10
   community-merchant: 6
   tool-forged: 6
-
+  arcane-arsenal: 8
+  harvest-festival: 10
+  industrial-output: 10
+  makers-mark: 9
+  nether-quarry: 8
+  week-in-motion: 11

@@ -1,5 +1,5 @@
 schema-version: 1
-layout-version: 2
+layout-version: 3
 
 progress:
   segments: 10
@@ -44,36 +44,57 @@ journal:
   filter-slot: 49
   history-slot: 50
   settings-slot: 51
+  close-slot: 52
   next-slot: 53
   tabs:
     daily:
       slot: 1
       material: SUNFLOWER
       name: "<yellow><bold>Daily</bold>"
-      lore: ["<tab_state_color><tab_state>"]
+      lore:
+        - "<gray><tab_availability>"
+        - "<gray><tab_count> open <dark_gray>• <green><tab_claimable> ready"
+        - "<gray>Refresh in <white><tab_time_left>"
+        - ""
+        - "<tab_state_color><tab_state>"
     weekly:
       slot: 3
       material: CLOCK
       name: "<aqua><bold>Weekly</bold>"
-      lore: ["<tab_state_color><tab_state>"]
+      lore:
+        - "<gray><tab_availability>"
+        - "<gray><tab_count> open <dark_gray>• <green><tab_claimable> ready"
+        - "<gray>Refresh in <white><tab_time_left>"
+        - ""
+        - "<tab_state_color><tab_state>"
     milestones:
       slot: 5
       material: NETHER_STAR
       name: "<light_purple><bold>Milestones</bold>"
-      lore: ["<tab_state_color><tab_state>"]
+      lore:
+        - "<gray><tab_count> open <dark_gray>• <green><tab_claimable> ready"
+        - "<gray>Permanent goals with no rotation."
+        - ""
+        - "<tab_state_color><tab_state>"
     manual:
       slot: 7
       material: WRITABLE_BOOK
       name: "<green><bold>Assigned</bold>"
-      lore: ["<tab_state_color><tab_state>"]
+      lore:
+        - "<gray><tab_count> open <dark_gray>• <green><tab_claimable> ready"
+        - "<gray>Quests assigned by staff or plugins."
+        - ""
+        - "<tab_state_color><tab_state>"
   summary:
     material: PLAYER_HEAD
     name: "<gradient:#56B9F2:#92E1FF><bold><player>'s Journal</bold></gradient>"
     lore:
       - "<gray>Rank category <white><rank_category>"
       - ""
-      - "<yellow>Daily <white><daily_used><dark_gray>/</dark_gray><white><daily_limit> <dark_gray>• <gray><daily_rerolls> free reroll(s)"
-      - "<aqua>Weekly <white><weekly_used><dark_gray>/</dark_gray><white><weekly_limit> <dark_gray>• <gray><weekly_rerolls> free reroll(s)"
+      - "<yellow>Daily <white><daily_used><dark_gray>/</dark_gray><white><daily_limit> <dark_gray>• <gray>refresh <white><daily_time_left>"
+      - "<dark_gray>  <daily_rerolls> free reroll(s) remaining"
+      - "<aqua>Weekly <white><weekly_used><dark_gray>/</dark_gray><white><weekly_limit> <dark_gray>• <gray>refresh <white><weekly_time_left>"
+      - "<dark_gray>  <weekly_rerolls> free reroll(s) remaining"
       - "<green>Assigned <white><manual_used><dark_gray>/</dark_gray><white><manual_limit>"
       - ""
       - "<gray>Ready to claim <green><claimable>"
@@ -115,7 +136,7 @@ journal:
   quest-card:
     objectives-shown: 2
     lore:
-      - "<dark_gray><scope> • <rarity>"
+      - "<dark_gray><category> • <rarity>"
       - "<status_color><status>"
       - ""
       - "<gray><description>"
@@ -131,7 +152,9 @@ details:
   title: "<gradient:#56B9F2:#92E1FF><bold>Quest Details</bold></gradient>"
   size: 54
   icon-slot: 4
+  objectives-label-slot: 18
   objective-slots: [19, 20, 21, 22, 23, 24, 25]
+  rewards-label-slot: 28
   reward-slots: [29, 30, 31, 32, 33, 34]
   back-slot: 45
   pin-slot: 47
@@ -140,14 +163,27 @@ details:
   close-slot: 53
   header:
     lore:
-      - "<dark_gray><scope> • <rarity>"
+      - "<dark_gray><category> • <scope> • <rarity>"
       - "<status_color><status>"
       - ""
       - "<gray><description>"
       - ""
+      - "{requirements}"
+      - ""
       - "<progress_bar> <progress_color><percentage>%"
       - "<gray>Progress <white><current><dark_gray>/</dark_gray><white><required>"
       - "<gray>Time left <white><time_left>"
+  objectives-label:
+    material: TARGET
+    name: "<aqua><bold>Objectives</bold>"
+    lore:
+      - "<gray><objective_count> requirement(s)"
+      - "<white><completion_rule>"
+  rewards-label:
+    material: CHEST
+    name: "<green><bold>Rewards</bold>"
+    lore:
+      - "<gray><reward_count> reward(s) delivered on claim."
   objective:
     active-material: LIME_DYE
     locked-material: GRAY_DYE
@@ -155,6 +191,7 @@ details:
     name: "<objective_state_color><bold><objective_name></bold>"
     lore:
       - "<objective_state_color><objective_state>"
+      - "<dark_gray><objective_type>"
       - "<progress_bar>"
       - "<gray>Progress <progress_color><current></progress_color><dark_gray>/</dark_gray><white><required>"
       - "<gray>Remaining <white><remaining>"

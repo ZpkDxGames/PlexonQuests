@@ -1,0 +1,25 @@
+schema-version: 1
+id: makers-mark
+revision: 1
+enabled: true
+scope: WEEKLY
+category: crafting
+rarity: RARE
+weight: 9
+eligibility: {required-permission: "", blocked-permissions: [], rank-categories: [], worlds: [], required-integrations: []}
+display:
+  icon: {material: ANVIL, amount: 1, glow-when-complete: true}
+  name: "<gradient:#FFD166:#C850C0><bold>Maker's Mark</bold></gradient>"
+  short-description: "Choose one substantial production order to finish."
+completion-mode: ANY
+claim-mode: MANUAL
+objectives:
+  chests: {type: CRAFT_ITEM, amount: 128, display: "Chests crafted", filters: {materials: [CHEST], game-modes: [SURVIVAL]}}
+  rails: {type: CRAFT_ITEM, amount: 256, display: "Rails crafted", filters: {materials: [RAIL], game-modes: [SURVIVAL]}}
+  torches: {type: CRAFT_ITEM, amount: 768, display: "Torches crafted", filters: {materials: [TORCH], game-modes: [SURVIVAL]}}
+rewards:
+  mode: ALL
+  entries:
+    experience: {type: EXPERIENCE_POINTS, amount: 1350, display: "<aqua>1,350 experience points"}
+effects: {use-rarity-defaults: true, claim: quest-claim}
+

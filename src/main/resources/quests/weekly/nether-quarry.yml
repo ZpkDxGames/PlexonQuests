@@ -1,0 +1,25 @@
+schema-version: 1
+id: nether-quarry
+revision: 1
+enabled: true
+scope: WEEKLY
+category: nether
+rarity: EPIC
+weight: 8
+eligibility: {required-permission: "", blocked-permissions: [], rank-categories: [], worlds: [], required-integrations: []}
+display:
+  icon: {material: NETHER_GOLD_ORE, amount: 1, glow-when-complete: true}
+  name: "<gradient:#FF6B6B:#C850C0><bold>Nether Quarry</bold></gradient>"
+  short-description: "Excavate terrain and ore from the Nether."
+completion-mode: ALL
+claim-mode: MANUAL
+objectives:
+  terrain: {type: BREAK_BLOCK, amount: 4096, display: "Natural Nether terrain", filters: {materials: [NETHERRACK, BLACKSTONE, BASALT], origin: NATURAL_ONLY, world-environments: [NETHER], game-modes: [SURVIVAL]}}
+  ores: {type: BREAK_BLOCK, amount: 96, display: "Natural Nether ores", filters: {materials: [NETHER_QUARTZ_ORE, NETHER_GOLD_ORE, ANCIENT_DEBRIS], origin: NATURAL_ONLY, world-environments: [NETHER], game-modes: [SURVIVAL]}}
+rewards:
+  mode: ALL
+  entries:
+    experience: {type: EXPERIENCE_POINTS, amount: 1750, display: "<aqua>1,750 experience points"}
+    gold: {type: ITEM, material: GOLD_INGOT, amount: 8, display: "<gold>8 Gold Ingots"}
+effects: {use-rarity-defaults: true, claim: quest-claim}
+

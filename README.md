@@ -15,7 +15,7 @@ There are no hard plugin dependencies. PlaceholderAPI, Vault, LuckPerms, and sup
 ## Installation
 
 1. Build with `mvn -B -ntp clean verify`, or download the JAR from the [latest GitHub release](https://github.com/ZpkDxGames/PlexonQuests/releases/latest).
-2. Copy `PlexonQuests-2.0.0.jar` into the server's `plugins` directory.
+2. Copy `PlexonQuests-2.0.1.jar` into the server's `plugins` directory.
 3. Start Paper once to create `plugins/PlexonQuests/` and the default definitions.
 4. Run `/quests validate` and `/quests diagnostics` as an operator.
 5. Review the reset timezone, worlds, rewards, and optional integration requirements before opening the server to players.
@@ -32,7 +32,7 @@ Do not copy an unshaded Maven JAR. The installable artifact contains the SQLite 
 - Players can pin quests, inspect history, reroll eligible assignments, and control feedback channels.
 - The 2.0 journal uses four clear scope tabs and compact cards; full objectives and rewards stay in the details view.
 
-The clean install includes 8 daily quests, 6 weekly quests, 4 milestones, two weighted pools, five rarities, menu layouts, effects, and messages.
+The clean install includes 15 daily quests, 12 weekly quests, 6 milestones, two weighted pools, five rarities, menu layouts, effects, and messages. The core catalog can fill every configured rank slot even when optional Plexon integrations are absent.
 
 ## Operational design
 

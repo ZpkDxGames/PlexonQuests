@@ -15,12 +15,14 @@ import com.zpkdxgames.plexonquests.quest.QuestAssignment;
 import com.zpkdxgames.plexonquests.quest.QuestDefinition;
 import com.zpkdxgames.plexonquests.quest.QuestScope;
 import com.zpkdxgames.plexonquests.reward.RewardService;
+import com.zpkdxgames.plexonquests.rotation.PeriodKeyService;
 import com.zpkdxgames.plexonquests.rotation.RerollService;
 import com.zpkdxgames.plexonquests.service.BlockOriginService;
 import com.zpkdxgames.plexonquests.service.FeedbackChannel;
 import com.zpkdxgames.plexonquests.service.PlayerProfile;
 import com.zpkdxgames.plexonquests.service.ProfileService;
 import com.zpkdxgames.plexonquests.service.SlotResolver;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -124,7 +126,7 @@ public final class MenuService {
                             "scope_name", scopeName(selectedScope).toLowerCase(Locale.ROOT),
                             "filter_name", filterName(journalContext.filter()).toLowerCase(Locale.ROOT))));
         }
-        bindTabs(holder, journalContext);
+        bindTabs(holder, journalContext, player, profile);
         setJournalControls(holder, player, profile, journalContext, page, pages);
         player.openInventory(holder.getInventory());
     }
@@ -137,6 +139,15 @@ public final class MenuService {
         fill(holder);
         holder.getInventory().setItem(
                 configs.snapshot().menus().integer("details.icon-slot", 4), renderer.detailHeader(assignment));
+        holder.getInventory().setItem(
+                configs.snapshot().menus().integer("details.objectives-label-slot", 18),
+                renderer.configured("details.objectives-label", text.placeholders(
+                        "objective_count", Integer.toString(assignment.objectives().size()),
+                        "completion_rule", completionRule(assignment.definition().completionMode()))));
+        holder.getInventory().setItem(
+                configs.snapshot().menus().integer("details.rewards-label-slot", 28),
+                renderer.configured("details.rewards-label", text.placeholders(
+                        "reward_count", Integer.toString(assignment.definition().rewards().entries().size()))));
         List<Integer> objectiveSlots = configs.snapshot().menus().integers("details.objective-slots");
         boolean previousComplete = true;
         int index = 0;
@@ -489,22 +500,52 @@ public final class MenuService {
         openContext(player, returnContext);
     }
 
-    private void bindTabs(QuestMenuHolder holder, MenuContext context) {
-        bindTab(holder, context, "daily", QuestScope.DAILY);
-        bindTab(holder, context, "weekly", QuestScope.WEEKLY);
-        bindTab(holder, context, "milestones", QuestScope.MILESTONE);
-        bindTab(holder, context, "manual", QuestScope.MANUAL);
+    private void bindTabs(
+            QuestMenuHolder holder, MenuContext context, Player player, PlayerProfile profile) {
+        bindTab(holder, context, player, profile, "daily", QuestScope.DAILY);
+        bindTab(holder, context, player, profile, "weekly", QuestScope.WEEKLY);
+        bindTab(holder, context, player, profile, "milestones", QuestScope.MILESTONE);
+        bindTab(holder, context, player, profile, "manual", QuestScope.MANUAL);
     }
 
-    private void bindTab(QuestMenuHolder holder, MenuContext context, String key, QuestScope scope) {
+    private void bindTab(
+            QuestMenuHolder holder,
+            MenuContext context,
+            Player player,
+            PlayerProfile profile,
+            String key,
+            QuestScope scope) {
         String path = "journal.tabs." + key;
         int slot = configs.snapshot().menus().integer(path + ".slot", scope.ordinal());
         boolean selected = context.scope() == scope;
+        long visible = profile.visibleAssignments().stream()
+                .filter(assignment -> assignment.definition().scope() == scope)
+                .count();
+        long claimable = profile.assignments(scope).stream()
+                .filter(assignment -> assignment.state() == AssignmentState.COMPLETED)
+                .count();
+        String availability;
+        String timeLeft;
+        if (scope.rotating()) {
+            var period = new PeriodKeyService(configs.snapshot().settings().rotation())
+                    .period(scope, Instant.now());
+            int used = profile.assignments(scope, period.key()).size();
+            int limit = slotResolver.resolve(player, scope, profile.rankCategory(), configs.snapshot().settings());
+            availability = used + "/" + limit + " slots used";
+            timeLeft = text.formatDuration(Duration.between(Instant.now(), period.endsAt()));
+        } else {
+            availability = visible + (visible == 1 ? " quest" : " quests");
+            timeLeft = "No rotation";
+        }
         holder.getInventory().setItem(slot, renderer.configured(
                 path,
                 text.placeholders(
                         "tab_state", selected ? "Selected" : "Click to view",
-                        "tab_state_color", selected ? "#72F1B8" : "#8B95A7"),
+                        "tab_state_color", selected ? "#72F1B8" : "#8B95A7",
+                        "tab_count", Long.toString(visible),
+                        "tab_claimable", Long.toString(claimable),
+                        "tab_availability", availability,
+                        "tab_time_left", timeLeft),
                 Map.of(),
                 selected));
         holder.action(slot, (viewer, click) -> openJournal(
@@ -525,12 +566,11 @@ public final class MenuService {
                 player, QuestScope.DAILY, profile.rankCategory(), configs.snapshot().settings());
         int weeklyLimit = slotResolver.resolve(
                 player, QuestScope.WEEKLY, profile.rankCategory(), configs.snapshot().settings());
-        long dailyUsed = profile.visibleAssignments().stream()
-                .filter(assignment -> assignment.definition().scope() == QuestScope.DAILY)
-                .count();
-        long weeklyUsed = profile.visibleAssignments().stream()
-                .filter(assignment -> assignment.definition().scope() == QuestScope.WEEKLY)
-                .count();
+        PeriodKeyService periods = new PeriodKeyService(configs.snapshot().settings().rotation());
+        var dailyPeriod = periods.period(QuestScope.DAILY, Instant.now());
+        var weeklyPeriod = periods.period(QuestScope.WEEKLY, Instant.now());
+        long dailyUsed = profile.assignments(QuestScope.DAILY, dailyPeriod.key()).size();
+        long weeklyUsed = profile.assignments(QuestScope.WEEKLY, weeklyPeriod.key()).size();
         long manualUsed = profile.visibleAssignments().stream()
                 .filter(assignment -> assignment.definition().scope() == QuestScope.MANUAL)
                 .count();
@@ -542,9 +582,11 @@ public final class MenuService {
                 "completed_total", Long.toString(profile.completedTotal()),
                 "daily_used", Long.toString(dailyUsed),
                 "daily_limit", Integer.toString(dailyLimit),
+                "daily_time_left", text.formatDuration(Duration.between(Instant.now(), dailyPeriod.endsAt())),
                 "daily_rerolls", Integer.toString(rerolls.freeRemaining(player, QuestScope.DAILY)),
                 "weekly_used", Long.toString(weeklyUsed),
                 "weekly_limit", Integer.toString(weeklyLimit),
+                "weekly_time_left", text.formatDuration(Duration.between(Instant.now(), weeklyPeriod.endsAt())),
                 "weekly_rerolls", Integer.toString(rerolls.freeRemaining(player, QuestScope.WEEKLY)),
                 "manual_used", Long.toString(manualUsed),
                 "manual_limit", Integer.toString(configs.snapshot().settings().assignments().maximumActiveManual())));
@@ -583,6 +625,17 @@ public final class MenuService {
             holder.getInventory().setItem(settings, renderer.configured("journal.settings", Map.of()));
             holder.action(settings, (viewer, click) -> openSettings(viewer, context));
         }
+        int close = configs.snapshot().menus().integer("journal.close-slot", 52);
+        holder.getInventory().setItem(close, renderer.configured("common.close", Map.of()));
+        holder.action(close, (viewer, click) -> viewer.closeInventory());
+    }
+
+    private static String completionRule(CompletionMode mode) {
+        return switch (mode) {
+            case ALL -> "Complete every objective";
+            case ANY -> "Complete any one objective";
+            case SEQUENCE -> "Complete objectives in order";
+        };
     }
 
     private void bindCommon(QuestMenuHolder holder, String menu, MenuContext parent) {

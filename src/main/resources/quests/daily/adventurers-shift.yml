@@ -1,0 +1,27 @@
+schema-version: 1
+id: adventurers-shift
+revision: 1
+enabled: true
+scope: DAILY
+category: activity
+rarity: COMMON
+weight: 12
+eligibility: {required-permission: "", blocked-permissions: [], rank-categories: [], worlds: [], required-integrations: []}
+display:
+  icon: {material: CLOCK, amount: 1, glow-when-complete: true}
+  name: "<gradient:#72F1B8:#92E1FF><bold>Adventurer's Shift</bold></gradient>"
+  short-description: "Stay actively engaged in survival play."
+completion-mode: ALL
+claim-mode: MANUAL
+objectives:
+  active_time:
+    type: PLAY_TIME
+    amount: 2700
+    display: "Active play time"
+    filters: {game-modes: [SURVIVAL]}
+rewards:
+  mode: ALL
+  entries:
+    experience: {type: EXPERIENCE_POINTS, amount: 200, display: "<aqua>200 experience points"}
+effects: {use-rarity-defaults: true, claim: quest-claim}
+

@@ -86,6 +86,53 @@ class StorageServiceTest {
         assertEquals(AssignmentState.CLAIMING, loaded.assignments().getFirst().state());
     }
 
+    @Test
+    void claimedRotatingAssignmentsRemainLoadedUntilTheirPeriodEnds() throws Exception {
+        UUID playerId = UUID.randomUUID();
+        Instant now = Instant.now();
+        QuestAssignment current = QuestAssignment.create(
+                playerId,
+                TestFixtures.quest("claimed-current", CompletionMode.ALL, 1L),
+                "daily",
+                "daily:current",
+                now.minusSeconds(60),
+                now.plus(Duration.ofHours(2)));
+        storage = open();
+        assertTrue(current.forceComplete(now));
+        assertTrue(storage.insertAssignment(current, "ClaimedTester").get(5, TimeUnit.SECONDS));
+        assertTrue(current.markClaiming());
+        assertTrue(storage.reserveClaim("current-claim", current).get(5, TimeUnit.SECONDS));
+        storage.completeClaim("current-claim", current).get(5, TimeUnit.SECONDS);
+        assertTrue(current.markClaimed(now));
+
+        storage.close();
+        storage = open();
+        StoredProfile loaded = storage.loadProfile(playerId, "ClaimedTester").get(5, TimeUnit.SECONDS);
+
+        assertEquals(1, loaded.assignments().size());
+        assertEquals(AssignmentState.CLAIMED, loaded.assignments().getFirst().state());
+    }
+
+    @Test
+    void periodQuestIdsIncludeCancelledAssignmentsThatCannotBeReinserted() throws Exception {
+        UUID playerId = UUID.randomUUID();
+        QuestAssignment assignment = QuestAssignment.create(
+                playerId,
+                TestFixtures.quest("already-used", CompletionMode.ALL, 1L),
+                "daily",
+                "daily:current",
+                Instant.now(),
+                Instant.now().plus(Duration.ofHours(2)));
+        storage = open();
+        assertTrue(storage.insertAssignment(assignment, "PeriodTester").get(5, TimeUnit.SECONDS));
+        assertTrue(assignment.cancel());
+        storage.archive(assignment, AssignmentState.CANCELLED).get(5, TimeUnit.SECONDS);
+
+        assertEquals(
+                java.util.Set.of("already-used"),
+                storage.questIdsForPeriod(playerId, "daily:current").get(5, TimeUnit.SECONDS));
+    }
+
     private StorageService open() throws Exception {
         StorageService created = new StorageService(
                 directory,

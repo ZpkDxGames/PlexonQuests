@@ -196,7 +196,10 @@ public class PlexonQuestsPlugin extends JavaPlugin {
         }), 1_728_000L, 1_728_000L);
 
         Bukkit.getScheduler().runTaskTimer(this, () -> Bukkit.getOnlinePlayers().forEach(player ->
-                profiles.profile(player).ifPresent(profile -> rotations.ensure(player, profile))), 1_200L, 1_200L);
+                profiles.profile(player).ifPresent(profile -> {
+                    profiles.refreshRankCategory(profile);
+                    rotations.ensure(player, profile);
+                })), 1_200L, 1_200L);
     }
 
     private static long ticks(Duration duration, long minimum) {

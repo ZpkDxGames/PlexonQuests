@@ -21,6 +21,7 @@ public final class QuestAssignment {
     private AssignmentState state;
     private Instant completedAt;
     private Instant claimedAt;
+    private boolean rerollReserved;
 
     public QuestAssignment(
             UUID id,
@@ -56,14 +57,34 @@ public final class QuestAssignment {
             String periodKey,
             Instant assignedAt,
             Instant expiresAt) {
-        return new QuestAssignment(
+        return create(playerId, definition, poolId, periodKey, assignedAt, expiresAt, Map.of());
+    }
+
+    public static QuestAssignment create(
+            UUID playerId,
+            QuestDefinition definition,
+            String poolId,
+            String periodKey,
+            Instant assignedAt,
+            Instant expiresAt,
+            Map<String, Long> initialProgress) {
+        QuestAssignment assignment = new QuestAssignment(
                 UUID.randomUUID(), playerId, definition, poolId, periodKey, assignedAt, expiresAt,
-                AssignmentState.ACTIVE, null, null, Map.of());
+                AssignmentState.ACTIVE, null, null, initialProgress);
+        if (assignment.isCompletionSatisfied()) {
+            assignment.transition(AssignmentState.COMPLETED);
+            assignment.completedAt = assignedAt;
+        }
+        return assignment;
     }
 
     public synchronized ProgressResult addProgress(String objectiveId, long delta, Instant now) {
         ObjectiveProgress objective = objectives.get(objectiveId);
-        if (objective == null || state != AssignmentState.ACTIVE || delta <= 0L || !sequenceAllows(objectiveId)) {
+        if (objective == null
+                || state != AssignmentState.ACTIVE
+                || rerollReserved
+                || delta <= 0L
+                || !sequenceAllows(objectiveId)) {
             return ProgressResult.rejected(objectiveId, objective == null ? 0L : objective.current());
         }
         long old = objective.current();
@@ -84,7 +105,7 @@ public final class QuestAssignment {
 
     public synchronized ProgressResult setProgress(String objectiveId, long value, Instant now) {
         ObjectiveProgress objective = objectives.get(objectiveId);
-        if (objective == null || state != AssignmentState.ACTIVE || !sequenceAllows(objectiveId)) {
+        if (objective == null || state != AssignmentState.ACTIVE || rerollReserved || !sequenceAllows(objectiveId)) {
             return ProgressResult.rejected(objectiveId, objective == null ? 0L : objective.current());
         }
         long old = objective.current();
@@ -101,7 +122,7 @@ public final class QuestAssignment {
     }
 
     public synchronized boolean forceComplete(Instant now) {
-        if (state != AssignmentState.ACTIVE) {
+        if (state != AssignmentState.ACTIVE || rerollReserved) {
             return false;
         }
         objectives.values().forEach(objective -> objective.set(objective.required()));
@@ -111,7 +132,7 @@ public final class QuestAssignment {
     }
 
     public synchronized boolean markClaiming() {
-        if (state != AssignmentState.COMPLETED) {
+        if (state != AssignmentState.COMPLETED || rerollReserved) {
             return false;
         }
         transition(AssignmentState.CLAIMING);
@@ -136,7 +157,7 @@ public final class QuestAssignment {
     }
 
     public synchronized boolean expire() {
-        if (state != AssignmentState.ACTIVE && state != AssignmentState.COMPLETED) {
+        if (rerollReserved || (state != AssignmentState.ACTIVE && state != AssignmentState.COMPLETED)) {
             return false;
         }
         transition(AssignmentState.EXPIRED);
@@ -144,11 +165,40 @@ public final class QuestAssignment {
     }
 
     public synchronized boolean cancel() {
-        if (state != AssignmentState.ACTIVE && state != AssignmentState.COMPLETED) {
+        if (rerollReserved || (state != AssignmentState.ACTIVE && state != AssignmentState.COMPLETED)) {
             return false;
         }
         transition(AssignmentState.CANCELLED);
         return true;
+    }
+
+    public synchronized boolean reserveReroll() {
+        if (state != AssignmentState.ACTIVE || rerollReserved) {
+            return false;
+        }
+        rerollReserved = true;
+        return true;
+    }
+
+    public synchronized boolean releaseReroll() {
+        if (!rerollReserved) {
+            return false;
+        }
+        rerollReserved = false;
+        return true;
+    }
+
+    public synchronized boolean finishReroll() {
+        if (state != AssignmentState.ACTIVE || !rerollReserved) {
+            return false;
+        }
+        rerollReserved = false;
+        transition(AssignmentState.CANCELLED);
+        return true;
+    }
+
+    public synchronized boolean rerollReserved() {
+        return rerollReserved;
     }
 
     private boolean sequenceAllows(String objectiveId) {

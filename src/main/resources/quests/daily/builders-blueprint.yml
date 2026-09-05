@@ -1,0 +1,29 @@
+schema-version: 1
+id: builders-blueprint
+revision: 1
+enabled: true
+scope: DAILY
+category: building
+rarity: COMMON
+weight: 10
+eligibility: {required-permission: "", blocked-permissions: [], rank-categories: [], worlds: [], required-integrations: []}
+display:
+  icon: {material: BRICKS, amount: 1, glow-when-complete: true}
+  name: "<gradient:#FF9F43:#FFD166><bold>Builder's Blueprint</bold></gradient>"
+  short-description: "Place sturdy blocks as part of a real build."
+completion-mode: ALL
+claim-mode: MANUAL
+objectives:
+  building_blocks:
+    type: PLACE_BLOCK
+    amount: 256
+    display: "Building blocks placed"
+    filters:
+      materials: [OAK_PLANKS, SPRUCE_PLANKS, BIRCH_PLANKS, JUNGLE_PLANKS, ACACIA_PLANKS, DARK_OAK_PLANKS, MANGROVE_PLANKS, CHERRY_PLANKS, PALE_OAK_PLANKS, COBBLESTONE, STONE_BRICKS, DEEPSLATE_BRICKS, BRICKS, GLASS]
+      game-modes: [SURVIVAL]
+rewards:
+  mode: ALL
+  entries:
+    experience: {type: EXPERIENCE_POINTS, amount: 210, display: "<aqua>210 experience points"}
+effects: {use-rarity-defaults: true, claim: quest-claim}
+

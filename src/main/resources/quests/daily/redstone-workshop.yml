@@ -1,0 +1,25 @@
+schema-version: 1
+id: redstone-workshop
+revision: 1
+enabled: true
+scope: DAILY
+category: crafting
+rarity: RARE
+weight: 7
+eligibility: {required-permission: "", blocked-permissions: [], rank-categories: [], worlds: [], required-integrations: []}
+display:
+  icon: {material: REDSTONE, amount: 1, glow-when-complete: true}
+  name: "<gradient:#FF6B6B:#FFD166><bold>Redstone Workshop</bold></gradient>"
+  short-description: "Assemble practical redstone components."
+completion-mode: ALL
+claim-mode: MANUAL
+objectives:
+  pistons: {type: CRAFT_ITEM, amount: 12, display: "Pistons", filters: {materials: [PISTON], game-modes: [SURVIVAL]}}
+  repeaters: {type: CRAFT_ITEM, amount: 12, display: "Redstone repeaters", filters: {materials: [REPEATER], game-modes: [SURVIVAL]}}
+  observers: {type: CRAFT_ITEM, amount: 8, display: "Observers", filters: {materials: [OBSERVER], game-modes: [SURVIVAL]}}
+rewards:
+  mode: ALL
+  entries:
+    experience: {type: EXPERIENCE_POINTS, amount: 430, display: "<aqua>430 experience points"}
+effects: {use-rarity-defaults: true, claim: quest-claim}
+

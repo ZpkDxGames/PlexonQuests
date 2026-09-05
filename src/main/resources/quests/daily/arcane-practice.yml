@@ -1,0 +1,27 @@
+schema-version: 1
+id: arcane-practice
+revision: 1
+enabled: true
+scope: DAILY
+category: enchanting
+rarity: UNCOMMON
+weight: 8
+eligibility: {required-permission: "", blocked-permissions: [], rank-categories: [], worlds: [], required-integrations: []}
+display:
+  icon: {material: ENCHANTING_TABLE, amount: 1, glow-when-complete: true}
+  name: "<gradient:#C850C0:#92E1FF><bold>Arcane Practice</bold></gradient>"
+  short-description: "Enchant equipment at an enchanting table."
+completion-mode: ALL
+claim-mode: MANUAL
+objectives:
+  enchanted_items:
+    type: ENCHANT_ITEM
+    amount: 3
+    display: "Items enchanted"
+    filters: {game-modes: [SURVIVAL]}
+rewards:
+  mode: ALL
+  entries:
+    experience: {type: EXPERIENCE_POINTS, amount: 280, display: "<aqua>280 experience points"}
+effects: {use-rarity-defaults: true, claim: quest-claim}
+

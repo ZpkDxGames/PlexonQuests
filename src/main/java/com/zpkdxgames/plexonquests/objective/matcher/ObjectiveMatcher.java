@@ -1,5 +1,6 @@
 package com.zpkdxgames.plexonquests.objective.matcher;
 
+import com.zpkdxgames.plexonquests.config.BlockOriginMode;
 import com.zpkdxgames.plexonquests.config.PluginSettings;
 import com.zpkdxgames.plexonquests.objective.Contribution;
 import com.zpkdxgames.plexonquests.objective.ObjectiveDefinition;
@@ -56,13 +57,15 @@ public final class ObjectiveMatcher {
                 && (contribution.spawnReason() == null || !filters.spawnReasons().contains(contribution.spawnReason()))) {
             return 0L;
         }
-        if (filters.origin() == OriginPolicy.NATURAL_ONLY
-                && (!contribution.originKnown() || !contribution.natural())) {
-            return 0L;
-        }
-        if (filters.origin() == OriginPolicy.PLAYER_PLACED_ONLY
-                && (!contribution.originKnown() || contribution.natural())) {
-            return 0L;
+        if (global.originMode() != BlockOriginMode.OFF) {
+            if (filters.origin() == OriginPolicy.NATURAL_ONLY
+                    && (!contribution.originKnown() || !contribution.natural())) {
+                return 0L;
+            }
+            if (filters.origin() == OriginPolicy.PLAYER_PLACED_ONLY
+                    && (!contribution.originKnown() || contribution.natural())) {
+                return 0L;
+            }
         }
         if (filters.matureOnly() && !contribution.mature()) {
             return 0L;
@@ -98,4 +101,3 @@ public final class ObjectiveMatcher {
         return amount < filters.minimumContribution() ? 0L : amount;
     }
 }
-

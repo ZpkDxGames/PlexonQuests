@@ -85,7 +85,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: steps.verify.outputs.exit_code == '0' && steps.distribution.outputs.exit_code == '0'
         with:
-          name: PlexonQuests-2.0.0
+          name: PlexonQuests-2.0.1
           path: |
             target/PlexonQuests-*.jar
             target/SHA256SUMS.txt

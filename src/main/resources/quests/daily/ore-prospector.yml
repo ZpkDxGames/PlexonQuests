@@ -1,0 +1,31 @@
+schema-version: 1
+id: ore-prospector
+revision: 1
+enabled: true
+scope: DAILY
+category: mining
+rarity: UNCOMMON
+weight: 10
+eligibility: {required-permission: "", blocked-permissions: [], rank-categories: [], worlds: [], required-integrations: []}
+display:
+  icon: {material: RAW_IRON, amount: 1, glow-when-complete: true}
+  name: "<gradient:#92E1FF:#FFD166><bold>Ore Prospector</bold></gradient>"
+  short-description: "Find a varied haul of naturally generated ore."
+completion-mode: ALL
+claim-mode: MANUAL
+objectives:
+  natural_ores:
+    type: BREAK_BLOCK
+    amount: 48
+    display: "Natural ores"
+    filters:
+      materials: [COAL_ORE, DEEPSLATE_COAL_ORE, IRON_ORE, DEEPSLATE_IRON_ORE, COPPER_ORE, DEEPSLATE_COPPER_ORE, GOLD_ORE, DEEPSLATE_GOLD_ORE, REDSTONE_ORE, DEEPSLATE_REDSTONE_ORE, LAPIS_ORE, DEEPSLATE_LAPIS_ORE, DIAMOND_ORE, DEEPSLATE_DIAMOND_ORE, EMERALD_ORE, DEEPSLATE_EMERALD_ORE]
+      origin: NATURAL_ONLY
+      world-environments: [NORMAL]
+      game-modes: [SURVIVAL]
+rewards:
+  mode: ALL
+  entries:
+    experience: {type: EXPERIENCE_POINTS, amount: 320, display: "<aqua>320 experience points"}
+effects: {use-rarity-defaults: true, claim: quest-claim}
+

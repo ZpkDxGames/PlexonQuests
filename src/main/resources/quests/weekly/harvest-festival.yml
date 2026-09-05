@@ -1,0 +1,27 @@
+schema-version: 1
+id: harvest-festival
+revision: 1
+enabled: true
+scope: WEEKLY
+category: farming
+rarity: RARE
+weight: 10
+eligibility: {required-permission: "", blocked-permissions: [], rank-categories: [], worlds: [], required-integrations: []}
+display:
+  icon: {material: HAY_BLOCK, amount: 1, glow-when-complete: true}
+  name: "<gradient:#FFD166:#72F1B8><bold>Harvest Festival</bold></gradient>"
+  short-description: "Bring in a large harvest of fully grown crops."
+completion-mode: ALL
+claim-mode: MANUAL
+objectives:
+  mature_crops:
+    type: HARVEST_CROP
+    amount: 1536
+    display: "Mature crops"
+    filters: {materials: [WHEAT, CARROTS, POTATOES, BEETROOTS, NETHER_WART], mature-only: true, game-modes: [SURVIVAL]}
+rewards:
+  mode: ALL
+  entries:
+    experience: {type: EXPERIENCE_POINTS, amount: 1200, display: "<aqua>1,200 experience points"}
+effects: {use-rarity-defaults: true, claim: quest-claim}
+

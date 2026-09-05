@@ -3,6 +3,7 @@ package com.zpkdxgames.plexonquests.rotation;
 import com.zpkdxgames.plexonquests.quest.PoolDefinition;
 import com.zpkdxgames.plexonquests.quest.QuestDefinition;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -19,6 +20,17 @@ public final class WeightedSelector {
             long seed,
             Set<String> excludedQuestIds,
             Predicate<QuestDefinition> eligible) {
+        return select(pool, definitions, amount, seed, excludedQuestIds, List.of(), eligible);
+    }
+
+    public List<QuestDefinition> select(
+            PoolDefinition pool,
+            Map<String, QuestDefinition> definitions,
+            int amount,
+            long seed,
+            Set<String> excludedQuestIds,
+            Collection<QuestDefinition> existing,
+            Predicate<QuestDefinition> eligible) {
         if (amount <= 0) {
             return List.of();
         }
@@ -27,6 +39,11 @@ public final class WeightedSelector {
         Set<String> used = new HashSet<>();
         Map<String, Integer> categories = new HashMap<>();
         Map<String, Integer> rarities = new HashMap<>();
+        for (QuestDefinition quest : existing) {
+            used.add(quest.id());
+            categories.merge(quest.category(), 1, Integer::sum);
+            rarities.merge(quest.rarity(), 1, Integer::sum);
+        }
 
         for (Map.Entry<String, Integer> minimum : pool.minimumPerRarity().entrySet()) {
             while (selected.size() < amount
@@ -42,14 +59,17 @@ public final class WeightedSelector {
         }
 
         for (String category : pool.guaranteedCategories()) {
+            if (selected.size() >= amount) {
+                break;
+            }
+            if (categories.getOrDefault(category, 0) > 0) {
+                continue;
+            }
             QuestDefinition chosen = choose(
                     pool, definitions, random, excludedQuestIds, used, categories, rarities,
                     quest -> quest.category().equals(category) && eligible.test(quest));
             if (chosen != null) {
                 add(chosen, selected, used, categories, rarities);
-            }
-            if (selected.size() >= amount) {
-                return List.copyOf(selected);
             }
         }
 
