@@ -146,13 +146,13 @@ public final class RerollService {
                                         Set<String> excluded = new HashSet<>(history.recentQuestIds());
                                         excluded.addAll(history.periodQuestIds());
                                         excluded.add(assignment.definition().id());
-                                        List<QuestDefinition> existing = profile
+                                        List<QuestDefinition> existingDefinitions = profile
                                                 .assignments(assignment.definition().scope(), assignment.periodKey())
                                                 .stream()
                                                 .filter(current -> !current.id().equals(assignment.id()))
                                                 .map(QuestAssignment::definition)
                                                 .toList();
-                                        Set<String> occupiedIds = existing.stream()
+                                        Set<String> occupiedIds = existingDefinitions.stream()
                                                 .map(QuestDefinition::id)
                                                 .collect(java.util.stream.Collectors.toSet());
                                         excluded.addAll(occupiedIds);
@@ -163,7 +163,7 @@ public final class RerollService {
                                                 1,
                                                 seed,
                                                 excluded,
-                                                existing,
+                                                existingDefinitions,
                                                 quest -> eligibility.evaluate(player, profile, quest).eligible());
                                         if (replacements.isEmpty()) {
                                             Set<String> fallbackExclusions = new HashSet<>(history.periodQuestIds());
@@ -175,7 +175,7 @@ public final class RerollService {
                                                     1,
                                                     seed,
                                                     fallbackExclusions,
-                                                    existing,
+                                                    existingDefinitions,
                                                     quest -> eligibility.evaluate(player, profile, quest).eligible());
                                         }
                                         if (replacements.isEmpty()) {
