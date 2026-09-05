@@ -7,6 +7,7 @@ import com.zpkdxgames.plexonquests.quest.PoolDefinition;
 import com.zpkdxgames.plexonquests.quest.QuestAssignment;
 import com.zpkdxgames.plexonquests.quest.QuestDefinition;
 import com.zpkdxgames.plexonquests.quest.QuestScope;
+import com.zpkdxgames.plexonquests.objective.ObjectiveType;
 import com.zpkdxgames.plexonquests.service.AssignmentService;
 import com.zpkdxgames.plexonquests.service.PlayerProfile;
 import com.zpkdxgames.plexonquests.service.ProgressService;
@@ -15,7 +16,9 @@ import com.zpkdxgames.plexonquests.service.SlotResolver;
 import com.zpkdxgames.plexonquests.util.Hashing;
 import java.time.Instant;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -132,11 +135,10 @@ public final class RotationService {
         if (missing == 0) {
             return;
         }
-        Set<String> currentIds = current.stream()
-                .map(assignment -> assignment.definition().id())
-                .collect(java.util.stream.Collectors.toSet());
         Instant historyCutoff = Instant.now().minus(pool.recentHistoryExclusion());
-        storage.recentQuestIds(profile.playerId(), historyCutoff).whenComplete((recent, failure) ->
+        CompletableFuture<Set<String>> recentFuture = storage.recentQuestIds(profile.playerId(), historyCutoff);
+        CompletableFuture<Set<String>> periodFuture = storage.questIdsForPeriod(profile.playerId(), period.key());
+        recentFuture.thenCombine(periodFuture, SelectionHistory::new).whenComplete((history, failure) ->
                 Bukkit.getScheduler().runTask(plugin, () -> {
                     if (!player.isOnline() || failure != null) {
                         if (failure != null) {
@@ -144,24 +146,37 @@ public final class RotationService {
                         }
                         return;
                     }
-                    Set<String> exclusions = new HashSet<>(recent);
-                    exclusions.addAll(currentIds);
+                    List<QuestAssignment> liveCurrent = profile.assignments(scope, period.key());
+                    int liveMissing = Math.max(0, limit - liveCurrent.size());
+                    if (liveMissing == 0) {
+                        return;
+                    }
+                    Set<String> liveCurrentIds = liveCurrent.stream()
+                            .map(assignment -> assignment.definition().id())
+                            .collect(java.util.stream.Collectors.toSet());
+                    Set<String> exclusions = new HashSet<>(history.recentQuestIds());
+                    exclusions.addAll(history.periodQuestIds());
+                    exclusions.addAll(liveCurrentIds);
                     long seed = Hashing.stableLong(
                             serverSeed + "|" + profile.playerId() + "|" + period.key() + "|" + pool.id());
                     List<QuestDefinition> chosen = selector.select(
                             pool,
                             snapshot.registry().quests(),
-                            missing,
+                            liveMissing,
                             seed,
                             exclusions,
+                            liveCurrent.stream().map(QuestAssignment::definition).toList(),
                             quest -> eligibility.evaluate(player, profile, quest).eligible());
-                    if (chosen.size() < missing) {
+                    if (chosen.size() < liveMissing) {
+                        Set<String> fallbackExclusions = new HashSet<>(history.periodQuestIds());
+                        fallbackExclusions.addAll(liveCurrentIds);
                         chosen = selector.select(
                                 pool,
                                 snapshot.registry().quests(),
-                                missing,
+                                liveMissing,
                                 seed,
-                                currentIds,
+                                fallbackExclusions,
+                                liveCurrent.stream().map(QuestAssignment::definition).toList(),
                                 quest -> eligibility.evaluate(player, profile, quest).eligible());
                     }
                     for (QuestDefinition quest : chosen) {
@@ -186,11 +201,19 @@ public final class RotationService {
             if (!eligibility.evaluate(player, profile, quest).eligible()) {
                 continue;
             }
-            assignments.add(player, profile, quest, "", "milestone", Instant.now(), null)
+            Map<String, Long> initialProgress = new LinkedHashMap<>();
+            quest.objectives().forEach((objectiveId, objective) -> {
+                if (objective.type() == ObjectiveType.QUESTS_CLAIMED) {
+                    initialProgress.put(objectiveId, profile.completedTotal());
+                }
+            });
+            assignments.add(player, profile, quest, "", "milestone", Instant.now(), null, initialProgress)
                     .exceptionally(failure -> {
                         plugin.getLogger().log(Level.FINE, "Milestone assignment already exists or could not load", failure);
                         return false;
                     });
         }
     }
+
+    private record SelectionHistory(Set<String> recentQuestIds, Set<String> periodQuestIds) {}
 }

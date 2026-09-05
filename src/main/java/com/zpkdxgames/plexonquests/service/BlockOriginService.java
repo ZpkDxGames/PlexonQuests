@@ -63,7 +63,7 @@ public final class BlockOriginService implements Listener {
 
     public OriginResult origin(Block block) {
         if (mode() == BlockOriginMode.OFF) {
-            return new OriginResult(false, false);
+            return new OriginResult(true, true);
         }
         OriginSet set = chunks.get(ChunkKey.of(block.getChunk()));
         if (set == null || !set.known) {

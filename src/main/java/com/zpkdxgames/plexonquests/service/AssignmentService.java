@@ -2,10 +2,13 @@ package com.zpkdxgames.plexonquests.service;
 
 import com.zpkdxgames.plexonquests.event.QuestAssignEvent;
 import com.zpkdxgames.plexonquests.event.QuestAssignedEvent;
+import com.zpkdxgames.plexonquests.event.QuestCompleteEvent;
+import com.zpkdxgames.plexonquests.quest.AssignmentState;
 import com.zpkdxgames.plexonquests.persistence.StorageService;
 import com.zpkdxgames.plexonquests.quest.QuestAssignment;
 import com.zpkdxgames.plexonquests.quest.QuestDefinition;
 import java.time.Instant;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import org.bukkit.Bukkit;
@@ -31,10 +34,22 @@ public final class AssignmentService {
             String periodKey,
             Instant assignedAt,
             Instant expiresAt) {
+        return add(player, profile, definition, poolId, periodKey, assignedAt, expiresAt, Map.of());
+    }
+
+    public CompletableFuture<Boolean> add(
+            Player player,
+            PlayerProfile profile,
+            QuestDefinition definition,
+            String poolId,
+            String periodKey,
+            Instant assignedAt,
+            Instant expiresAt,
+            Map<String, Long> initialProgress) {
         if (!Bukkit.isPrimaryThread()) {
             CompletableFuture<Boolean> result = new CompletableFuture<>();
             Bukkit.getScheduler().runTask(plugin, () -> add(
-                            player, profile, definition, poolId, periodKey, assignedAt, expiresAt)
+                            player, profile, definition, poolId, periodKey, assignedAt, expiresAt, initialProgress)
                     .whenComplete((added, failure) -> {
                         if (failure == null) {
                             result.complete(added);
@@ -45,7 +60,7 @@ public final class AssignmentService {
             return result;
         }
         QuestAssignment assignment = QuestAssignment.create(
-                profile.playerId(), definition, poolId, periodKey, assignedAt, expiresAt);
+                profile.playerId(), definition, poolId, periodKey, assignedAt, expiresAt, initialProgress);
         QuestAssignEvent event = new QuestAssignEvent(
                 player, assignment.id(), definition.id(), assignment.poolId(), assignment.periodKey());
         Bukkit.getPluginManager().callEvent(event);
@@ -66,6 +81,10 @@ public final class AssignmentService {
                 progress.reindex(profile);
                 Bukkit.getPluginManager().callEvent(new QuestAssignedEvent(
                         player, assignment.id(), definition.id(), assignment.poolId(), assignment.periodKey()));
+                if (assignment.state() == AssignmentState.COMPLETED) {
+                    Bukkit.getPluginManager().callEvent(
+                            new QuestCompleteEvent(player, assignment.id(), definition.id()));
+                }
                 installed.complete(true);
             });
             return installed;

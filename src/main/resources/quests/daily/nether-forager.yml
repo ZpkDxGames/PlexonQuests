@@ -1,0 +1,31 @@
+schema-version: 1
+id: nether-forager
+revision: 1
+enabled: true
+scope: DAILY
+category: gathering
+rarity: RARE
+weight: 7
+eligibility: {required-permission: "", blocked-permissions: [], rank-categories: [], worlds: [], required-integrations: []}
+display:
+  icon: {material: BLACKSTONE, amount: 1, glow-when-complete: true}
+  name: "<gradient:#FF6B6B:#C850C0><bold>Nether Forager</bold></gradient>"
+  short-description: "Gather naturally generated Nether terrain."
+completion-mode: ALL
+claim-mode: MANUAL
+objectives:
+  nether_materials:
+    type: BREAK_BLOCK
+    amount: 640
+    display: "Natural Nether blocks"
+    filters:
+      materials: [NETHERRACK, BLACKSTONE, BASALT, SOUL_SAND, SOUL_SOIL]
+      origin: NATURAL_ONLY
+      world-environments: [NETHER]
+      game-modes: [SURVIVAL]
+rewards:
+  mode: ALL
+  entries:
+    experience: {type: EXPERIENCE_POINTS, amount: 420, display: "<aqua>420 experience points"}
+effects: {use-rarity-defaults: true, claim: quest-claim}
+

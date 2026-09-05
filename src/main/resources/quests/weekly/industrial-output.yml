@@ -1,0 +1,29 @@
+schema-version: 1
+id: industrial-output
+revision: 1
+enabled: true
+scope: WEEKLY
+category: smelting
+rarity: RARE
+weight: 10
+eligibility: {required-permission: "", blocked-permissions: [], rank-categories: [], worlds: [], required-integrations: []}
+display:
+  icon: {material: BLAST_FURNACE, amount: 1, glow-when-complete: true}
+  name: "<gradient:#FF9F43:#56B9F2><bold>Industrial Output</bold></gradient>"
+  short-description: "Collect a major batch of useful furnace output."
+completion-mode: ALL
+claim-mode: MANUAL
+objectives:
+  furnace_output:
+    type: SMELT_ITEM
+    amount: 768
+    display: "Smelted items collected"
+    filters:
+      materials: [IRON_INGOT, COPPER_INGOT, GOLD_INGOT, GLASS, STONE, BRICK, COOKED_BEEF, COOKED_CHICKEN, COOKED_PORKCHOP, COOKED_MUTTON, COOKED_COD, COOKED_SALMON, BAKED_POTATO]
+      game-modes: [SURVIVAL]
+rewards:
+  mode: ALL
+  entries:
+    experience: {type: EXPERIENCE_POINTS, amount: 1450, display: "<aqua>1,450 experience points"}
+effects: {use-rarity-defaults: true, claim: quest-claim}
+

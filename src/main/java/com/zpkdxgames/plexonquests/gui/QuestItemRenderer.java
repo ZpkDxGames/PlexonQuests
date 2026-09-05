@@ -1,6 +1,7 @@
 package com.zpkdxgames.plexonquests.gui;
 
 import com.zpkdxgames.plexonquests.config.ConfigManager;
+import com.zpkdxgames.plexonquests.objective.ObjectiveType;
 import com.zpkdxgames.plexonquests.objective.OriginPolicy;
 import com.zpkdxgames.plexonquests.presentation.ItemFactory;
 import com.zpkdxgames.plexonquests.presentation.TextService;
@@ -11,6 +12,7 @@ import com.zpkdxgames.plexonquests.reward.RewardDefinition;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import net.kyori.adventure.text.Component;
@@ -34,10 +36,12 @@ public final class QuestItemRenderer {
         double percentage = progress.percentage();
         Map<String, String> values = text.placeholders(
                 "scope", assignment.definition().scope().name(),
+                "category", humanize(assignment.definition().category()),
+                "completion_rule", completionRule(assignment),
                 "status", statusLabel(assignment.state()),
                 "status_color", statusColor(assignment.state()),
-                "current", text.formatNumber(progress.current()),
-                "required", text.formatNumber(progress.required()),
+                "current", formatAssignmentValue(assignment, progress.current()),
+                "required", formatAssignmentValue(assignment, progress.required()),
                 "percentage", Integer.toString((int) Math.floor(percentage)),
                 "progress_color", text.progressColor(percentage),
                 "time_left", timeLeft(assignment),
@@ -68,10 +72,12 @@ public final class QuestItemRenderer {
         double percentage = progress.percentage();
         Map<String, String> values = text.placeholders(
                 "scope", assignment.definition().scope().name(),
+                "category", humanize(assignment.definition().category()),
+                "completion_rule", completionRule(assignment),
                 "status", statusLabel(assignment.state()),
                 "status_color", statusColor(assignment.state()),
-                "current", text.formatNumber(progress.current()),
-                "required", text.formatNumber(progress.required()),
+                "current", formatAssignmentValue(assignment, progress.current()),
+                "required", formatAssignmentValue(assignment, progress.required()),
                 "percentage", Integer.toString((int) Math.floor(percentage)),
                 "progress_color", text.progressColor(percentage),
                 "time_left", timeLeft(assignment));
@@ -83,7 +89,10 @@ public final class QuestItemRenderer {
                 "description", text.parse(assignment.definition().display().shortDescription()),
                 "progress_bar", text.progressBar(percentage));
         List<Component> lore = text.expandLines(
-                configs.snapshot().menus().strings("details.header.lore"), values, components, Map.of());
+                configs.snapshot().menus().strings("details.header.lore"),
+                values,
+                components,
+                Map.of("requirements", requirementSummary(assignment)));
         boolean glow = assignment.state() == AssignmentState.COMPLETED
                 && assignment.definition().display().icon().glowWhenComplete();
         return items.create(
@@ -107,9 +116,10 @@ public final class QuestItemRenderer {
                 "objective_state_color", stateColor,
                 "objective_name", objective.definition().display(),
                 "objective_state", locked ? "Locked" : objective.complete() ? "Complete" : "In progress",
-                "current", text.formatNumber(objective.current()),
-                "required", text.formatNumber(objective.required()),
-                "remaining", text.formatNumber(Math.max(0L, objective.required() - objective.current())),
+                "objective_type", humanize(objective.definition().type().name()),
+                "current", formatObjectiveValue(objective, objective.current()),
+                "required", formatObjectiveValue(objective, objective.required()),
+                "remaining", formatObjectiveValue(objective, Math.max(0L, objective.required() - objective.current())),
                 "progress_color", text.progressColor(percentage));
         Map<String, Component> components = Map.of("progress_bar", text.progressBar(percentage));
         List<Component> filters = filterSummary(objective);
@@ -128,7 +138,7 @@ public final class QuestItemRenderer {
     public ItemStack rewardCard(RewardDefinition reward) {
         Material material = reward.material() == null ? Material.CHEST : reward.material();
         List<Component> lore = List.of(
-                text.parse("<dark_gray>" + reward.type().name()),
+                text.parse("<dark_gray>" + humanize(reward.type().name())),
                 Component.empty(),
                 text.parse("<gray>Delivered when you claim this quest."));
         return items.create(material, text.parse(reward.display()), lore, false);
@@ -176,8 +186,8 @@ public final class QuestItemRenderer {
                     text.placeholders(
                             "name", objective.definition().display(),
                             "progress_color", text.progressColor(objective.current() * 100D / objective.required()),
-                            "current", text.formatNumber(objective.current()),
-                            "required", text.formatNumber(objective.required()))));
+                            "current", formatObjectiveValue(objective, objective.current()),
+                            "required", formatObjectiveValue(objective, objective.required()))));
         }
         return List.copyOf(output);
     }
@@ -221,21 +231,115 @@ public final class QuestItemRenderer {
     private List<Component> filterSummary(ObjectiveProgress objective) {
         List<Component> output = new ArrayList<>();
         var filters = objective.definition().filters();
+        if (!filters.materials().isEmpty()) {
+            output.add(text.parse("<dark_gray>• <gray>Counts <white>" + summarize(filters.materials(), 4)));
+        }
+        if (!filters.caughtMaterials().isEmpty()) {
+            output.add(text.parse("<dark_gray>• <gray>Catches <white>" + summarize(filters.caughtMaterials(), 4)));
+        }
+        if (!filters.entityTypes().isEmpty()) {
+            output.add(text.parse("<dark_gray>• <gray>Targets <white>" + summarize(filters.entityTypes(), 4)));
+        }
+        if (!filters.damageCauses().isEmpty()) {
+            output.add(text.parse("<dark_gray>• <gray>Damage <white>" + summarize(filters.damageCauses(), 3)));
+        }
+        if (!filters.spawnReasons().isEmpty()) {
+            output.add(text.parse("<dark_gray>• <gray>Spawns <white>" + summarize(filters.spawnReasons(), 3)));
+        }
         if (filters.origin() == OriginPolicy.NATURAL_ONLY) {
             output.add(text.parse("<dark_gray>• <gray>Natural blocks only"));
+        } else if (filters.origin() == OriginPolicy.PLAYER_PLACED_ONLY) {
+            output.add(text.parse("<dark_gray>• <gray>Player-placed blocks only"));
         }
         if (filters.matureOnly()) {
             output.add(text.parse("<dark_gray>• <gray>Fully grown crops only"));
+        }
+        if (filters.hostileOnly()) {
+            output.add(text.parse("<dark_gray>• <gray>Hostile creatures only"));
+        }
+        if (filters.uniqueOnly()) {
+            output.add(text.parse("<dark_gray>• <gray>Each unique target counts once"));
         }
         if (!filters.worlds().isEmpty()) {
             output.add(text.parse("<dark_gray>• <gray>Worlds: <white><worlds>",
                     Map.of("worlds", String.join(", ", filters.worlds()))));
         }
+        if (!filters.worldEnvironments().isEmpty()) {
+            output.add(text.parse("<dark_gray>• <gray>Dimension <white>" + summarize(filters.worldEnvironments(), 3)));
+        }
+        if (!filters.movementTypes().isEmpty()) {
+            output.add(text.parse("<dark_gray>• <gray>Movement <white>" + summarize(filters.movementTypes(), 4)));
+        }
         if (!filters.gameModes().isEmpty()) {
-            output.add(text.parse("<dark_gray>• <gray>Modes: <white><modes>",
-                    Map.of("modes", filters.gameModes().toString())));
+            output.add(text.parse("<dark_gray>• <gray>Mode <white>" + summarize(filters.gameModes(), 3)));
+        }
+        if (!filters.advancementKeys().isEmpty()) {
+            output.add(text.parse("<dark_gray>• <gray>Advancements <white>" + summarize(filters.advancementKeys(), 3)));
         }
         return List.copyOf(output);
+    }
+
+    private List<Component> requirementSummary(QuestAssignment assignment) {
+        List<Component> output = new ArrayList<>();
+        output.add(text.parse("<gray>Completion <white>" + completionRule(assignment)));
+        var eligibility = assignment.definition().eligibility();
+        if (!eligibility.requiredIntegrations().isEmpty()) {
+            output.add(text.parse("<gray>Requires <white>" + summarize(eligibility.requiredIntegrations(), 3)));
+        }
+        if (!eligibility.rankCategories().isEmpty()) {
+            output.add(text.parse("<gray>Ranks <white>" + summarize(eligibility.rankCategories(), 4)));
+        }
+        if (!eligibility.worlds().isEmpty()) {
+            output.add(text.parse("<gray>Available in <white>" + summarize(eligibility.worlds(), 4)));
+        }
+        if (!eligibility.requiredPermission().isBlank()) {
+            output.add(text.parse("<gray>Requires a server permission"));
+        }
+        return List.copyOf(output);
+    }
+
+    private String formatAssignmentValue(QuestAssignment assignment, long value) {
+        boolean playTimeOnly = !assignment.objectives().isEmpty()
+                && assignment.objectives().stream()
+                        .allMatch(objective -> objective.definition().type() == ObjectiveType.PLAY_TIME);
+        return playTimeOnly ? text.formatDuration(Duration.ofSeconds(value)) : text.formatNumber(value);
+    }
+
+    private String formatObjectiveValue(ObjectiveProgress objective, long value) {
+        return objective.definition().type() == ObjectiveType.PLAY_TIME
+                ? text.formatDuration(Duration.ofSeconds(value))
+                : text.formatNumber(value);
+    }
+
+    private static String completionRule(QuestAssignment assignment) {
+        return switch (assignment.definition().completionMode()) {
+            case ALL -> "Complete every objective";
+            case ANY -> "Complete any one objective";
+            case SEQUENCE -> "Complete objectives in order";
+        };
+    }
+
+    private static String summarize(Collection<?> values, int maximum) {
+        List<String> labels = values.stream()
+                .map(value -> String.valueOf(value))
+                .map(QuestItemRenderer::humanize)
+                .sorted()
+                .toList();
+        String visible = String.join(", ", labels.stream().limit(maximum).toList());
+        int remaining = labels.size() - maximum;
+        return remaining > 0 ? visible + " +" + remaining : visible;
+    }
+
+    private static String humanize(String value) {
+        String normalized = value == null ? "" : value.toLowerCase(java.util.Locale.ROOT).replace('_', ' ').replace('-', ' ');
+        StringBuilder output = new StringBuilder(normalized.length());
+        boolean capitalize = true;
+        for (int index = 0; index < normalized.length(); index++) {
+            char character = normalized.charAt(index);
+            output.append(capitalize ? Character.toUpperCase(character) : character);
+            capitalize = character == ' ';
+        }
+        return output.toString();
     }
 
     private String timeLeft(QuestAssignment assignment) {

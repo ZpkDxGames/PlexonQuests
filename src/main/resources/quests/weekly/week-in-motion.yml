@@ -1,0 +1,23 @@
+schema-version: 1
+id: week-in-motion
+revision: 1
+enabled: true
+scope: WEEKLY
+category: activity
+rarity: RARE
+weight: 11
+eligibility: {required-permission: "", blocked-permissions: [], rank-categories: [], worlds: [], required-integrations: []}
+display:
+  icon: {material: RECOVERY_COMPASS, amount: 1, glow-when-complete: true}
+  name: "<gradient:#72F1B8:#56B9F2><bold>Week in Motion</bold></gradient>"
+  short-description: "Spend four active hours adventuring in survival."
+completion-mode: ALL
+claim-mode: MANUAL
+objectives:
+  active_time: {type: PLAY_TIME, amount: 14400, display: "Active play time", filters: {game-modes: [SURVIVAL]}}
+rewards:
+  mode: ALL
+  entries:
+    experience: {type: EXPERIENCE_POINTS, amount: 1200, display: "<aqua>1,200 experience points"}
+effects: {use-rarity-defaults: true, claim: quest-claim}
+

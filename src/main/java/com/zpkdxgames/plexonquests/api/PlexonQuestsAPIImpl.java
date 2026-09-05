@@ -88,6 +88,13 @@ public final class PlexonQuestsAPIImpl implements PlexonQuestsAPI {
             if (player == null || profile == null || definition == null || definition.scope() != QuestScope.MANUAL) {
                 return CompletableFuture.completedFuture(false);
             }
+            long activeManual = profile.assignments(QuestScope.MANUAL).stream()
+                    .filter(assignment -> !assignment.state().terminal())
+                    .count();
+            if (activeManual >= configs.snapshot().settings().assignments().maximumActiveManual()
+                    && !player.hasPermission("plexonquests.bypass.slot-limit")) {
+                return CompletableFuture.completedFuture(false);
+            }
             return assignments.add(
                     player, profile, definition, "", "manual:" + UUID.randomUUID(), Instant.now(), null);
         }).thenCompose(future -> future);
@@ -137,7 +144,10 @@ public final class PlexonQuestsAPIImpl implements PlexonQuestsAPI {
     public CompletableFuture<Boolean> pin(UUID playerId, UUID assignmentId) {
         return onPrimary(() -> {
             PlayerProfile profile = profiles.profile(playerId).orElse(null);
-            if (profile == null || profile.assignment(assignmentId).isEmpty()) {
+            QuestAssignment assignment = profile == null
+                    ? null
+                    : profile.assignment(assignmentId).orElse(null);
+            if (assignment == null || assignment.state().terminal()) {
                 return false;
             }
             profile.pinnedAssignment(assignmentId);

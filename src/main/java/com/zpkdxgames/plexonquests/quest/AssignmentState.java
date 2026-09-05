@@ -11,5 +11,8 @@ public enum AssignmentState {
     public boolean terminal() {
         return this == CLAIMED || this == EXPIRED || this == CANCELLED;
     }
-}
 
+    public boolean occupiesRotationSlot() {
+        return this != EXPIRED && this != CANCELLED;
+    }
+}

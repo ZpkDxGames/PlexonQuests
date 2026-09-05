@@ -1,4 +1,5 @@
 schema-version: 1
+catalog-version: 2
 id: daily
 enabled: true
 scope: DAILY
@@ -6,8 +7,12 @@ base-assignments: 3
 prevent-duplicates: true
 recent-history-exclusion: 7d
 mix:
-  guaranteed-categories: [gathering]
+  guaranteed-categories: [activity]
   maximum-per-category: 2
+  minimum-per-rarity:
+    COMMON: 1
+  maximum-per-rarity:
+    RARE: 3
 quests:
   stonebound: 12
   timber-trail: 12
@@ -17,4 +22,10 @@ quests:
   artisan-hours: 10
   world-wanderer: 8
   steady-hand: 9
-
+  adventurers-shift: 12
+  arcane-practice: 8
+  builders-blueprint: 10
+  nether-forager: 7
+  ore-prospector: 10
+  redstone-workshop: 7
+  smelters-shift: 10

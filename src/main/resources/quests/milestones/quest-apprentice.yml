@@ -1,0 +1,23 @@
+schema-version: 1
+id: quest-apprentice
+revision: 1
+enabled: true
+scope: MILESTONE
+category: progression
+rarity: UNCOMMON
+weight: 1
+eligibility: {required-permission: "", blocked-permissions: [], rank-categories: [], worlds: [], required-integrations: []}
+display:
+  icon: {material: MAP, amount: 1, glow-when-complete: true}
+  name: "<gradient:#72F1B8:#92E1FF><bold>Quest Apprentice</bold></gradient>"
+  short-description: "Claim ten quest rewards."
+completion-mode: ALL
+claim-mode: MANUAL
+objectives:
+  claims: {type: QUESTS_CLAIMED, amount: 10, display: "Quests claimed", filters: {}}
+rewards:
+  mode: ALL
+  entries:
+    experience: {type: EXPERIENCE_POINTS, amount: 500, display: "<aqua>500 experience points"}
+effects: {use-rarity-defaults: true, claim: quest-claim}
+

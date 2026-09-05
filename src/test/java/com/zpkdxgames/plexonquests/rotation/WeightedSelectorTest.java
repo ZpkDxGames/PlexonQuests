@@ -73,6 +73,53 @@ class WeightedSelectorTest {
         assertEquals(1L, selected.stream().filter(quest -> quest.rarity().equals("COMMON")).count());
     }
 
+    @Test
+    void guaranteedCategoriesNeverPushSelectionPastRequestedAmount() {
+        QuestDefinition rare = withRarity(TestFixtures.quest(
+                "rare-a", "special", QuestScope.DAILY, CompletionMode.ALL, 1L), "RARE");
+        QuestDefinition gathering = TestFixtures.quest(
+                "gathering-a", "gathering", QuestScope.DAILY, CompletionMode.ALL, 1L);
+        PoolDefinition pool = pool(
+                Map.of(rare.id(), 10, gathering.id(), 10),
+                List.of("gathering"),
+                2,
+                Map.of("RARE", 1),
+                Map.of());
+
+        List<QuestDefinition> selected = new WeightedSelector().select(
+                pool, Map.of(rare.id(), rare, gathering.id(), gathering), 1, 4L, Set.of(), ignored -> true);
+
+        assertEquals(1, selected.size());
+        assertEquals("rare-a", selected.getFirst().id());
+    }
+
+    @Test
+    void existingAssignmentsSeedDuplicateCategoryAndRarityConstraints() {
+        QuestDefinition existing = withRarity(TestFixtures.quest(
+                "mining-a", "mining", QuestScope.DAILY, CompletionMode.ALL, 1L), "RARE");
+        QuestDefinition mining = TestFixtures.quest(
+                "mining-b", "mining", QuestScope.DAILY, CompletionMode.ALL, 1L);
+        QuestDefinition gathering = TestFixtures.quest(
+                "gathering-a", "gathering", QuestScope.DAILY, CompletionMode.ALL, 1L);
+        PoolDefinition pool = pool(
+                Map.of(existing.id(), 10, mining.id(), 100, gathering.id(), 1),
+                List.of("mining"),
+                1,
+                Map.of("RARE", 1),
+                Map.of("RARE", 1));
+
+        List<QuestDefinition> selected = new WeightedSelector().select(
+                pool,
+                Map.of(existing.id(), existing, mining.id(), mining, gathering.id(), gathering),
+                1,
+                11L,
+                Set.of(),
+                List.of(existing),
+                ignored -> true);
+
+        assertEquals(List.of("gathering-a"), selected.stream().map(QuestDefinition::id).toList());
+    }
+
     private static PoolDefinition pool(Map<String, Integer> weights) {
         return pool(weights, List.of("gathering"), 1, Map.of(), Map.of());
     }

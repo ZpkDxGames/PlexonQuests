@@ -18,9 +18,11 @@ Definition errors include an exact file/key path. An invalid quest or pool is qu
 
 Paths are resolved inside `plugins/PlexonQuests`; configuration and backup paths cannot escape that directory.
 
-## Menu layout upgrades
+## Menu and catalog upgrades
 
-PlexonQuests 2.0 uses `layout-version: 2` in `menus.yml`. On the first 2.0 startup, a layout-1 menu is copied to `plugins/PlexonQuests/backups/menus-v1-<timestamp>.yml` and the bundled layout-2 menu is installed atomically. Reapply intentional menu customizations to the new structure after comparing that backup. Reload validation rejects missing, out-of-bounds, duplicate, and overlapping menu slots.
+PlexonQuests 2.0.1 uses `layout-version: 3` in `menus.yml`. On the first 2.0.1 startup, an earlier menu is copied to `plugins/PlexonQuests/backups/menus-v<old>-<timestamp>.yml` and the bundled layout-3 menu is installed atomically. Reapply intentional menu customizations to the new structure after comparing that backup. Reload validation rejects missing, out-of-bounds, duplicate, and overlapping menu slots.
+
+Bundled pools use `catalog-version: 2`. An exact, untouched 2.0.0 default pool is backed up and expanded automatically. A pool with custom keys, eligibility, weights, mix rules, or other changes is preserved. Add the new quest IDs manually when retaining a customized pool.
 
 ## Root settings
 
@@ -51,9 +53,10 @@ Configure free daily/weekly counts, a per-period maximum, and optional Vault pri
 ### `tracking`
 
 - Creative and spectator progress are disabled by default.
-- `natural-block-mode`: `PERSISTENT_CHUNK`, `SESSION`, or `OFF`. `OFF` and unknown origin data fail closed for natural-only filters.
+- `natural-block-mode`: `PERSISTENT_CHUNK`, `SESSION`, or `OFF`. `OFF` ignores origin filters; unknown tracked origin data fails closed in the other modes.
 - `natural-block-maximum-positions-per-chunk`: hard memory/serialization bound.
 - Travel sampling excludes teleports and caps implausible deltas.
+- `contribution-cooldown-ms` is a global lower bound; an objective's own `filters.cooldown` may make it longer.
 - Actionbar/bossbar values are lower bounds on update intervals.
 - AFK timeout gates sampled playtime.
 
@@ -182,7 +185,7 @@ quests:
   timber-trail: 12
 ```
 
-Weights must be positive and every referenced quest must exist, survive validation, and match the pool scope. Rarity constraints must name configured rarities. Floors are attempted before guaranteed categories and normal weighted selection; eligibility/category/cap conflicts can make a floor impossible, in which case selection continues without inventing an ineligible quest.
+Weights must be positive and every referenced quest must exist, survive validation, and match the pool scope. Rarity constraints must name configured rarities. Floors are attempted before guaranteed categories and normal weighted selection; eligibility/category/cap conflicts can make a floor impossible, in which case selection continues without inventing an ineligible quest. Existing assignments count toward all mix limits when missing slots are filled. If `recent-history-exclusion` is omitted, the root rotation value is inherited. Validation warns when a pool cannot supply the configured slot maximum or names a guaranteed category with no matching quest.
 
 ## MiniMessage safety
 

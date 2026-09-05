@@ -281,10 +281,14 @@ public final class StorageService implements AutoCloseable {
                     SELECT assignment_id, pool_id, period_key, state, assigned_at, expires_at,
                            completed_at, claimed_at, definition_snapshot
                     FROM assignments
-                    WHERE player_uuid=? AND state IN ('ACTIVE','COMPLETED','CLAIMING')
+                    WHERE player_uuid=? AND (
+                      state IN ('ACTIVE','COMPLETED','CLAIMING')
+                      OR (state='CLAIMED' AND expires_at IS NOT NULL AND expires_at>?)
+                    )
                     ORDER BY assigned_at, assignment_id
                     """)) {
                 statement.setString(1, playerId.toString());
+                statement.setLong(2, Instant.now().toEpochMilli());
                 try (ResultSet result = statement.executeQuery()) {
                     while (result.next()) {
                         UUID assignmentId = UUID.fromString(result.getString("assignment_id"));
@@ -655,6 +659,23 @@ public final class StorageService implements AutoCloseable {
                     "SELECT DISTINCT quest_id FROM assignments WHERE player_uuid=? AND assigned_at>=?")) {
                 statement.setString(1, playerId.toString());
                 statement.setLong(2, since.toEpochMilli());
+                try (ResultSet result = statement.executeQuery()) {
+                    while (result.next()) {
+                        ids.add(result.getString(1));
+                    }
+                }
+            }
+            return Set.copyOf(ids);
+        });
+    }
+
+    public CompletableFuture<Set<String>> questIdsForPeriod(UUID playerId, String periodKey) {
+        return submit(() -> {
+            Set<String> ids = new java.util.HashSet<>();
+            try (PreparedStatement statement = connection.prepareStatement(
+                    "SELECT DISTINCT quest_id FROM assignments WHERE player_uuid=? AND period_key=?")) {
+                statement.setString(1, playerId.toString());
+                statement.setString(2, periodKey);
                 try (ResultSet result = statement.executeQuery()) {
                     while (result.next()) {
                         ids.add(result.getString(1));

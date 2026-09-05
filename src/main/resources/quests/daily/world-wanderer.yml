@@ -1,9 +1,9 @@
 schema-version: 1
 id: world-wanderer
-revision: 1
+revision: 2
 enabled: true
 scope: DAILY
-category: exploration
+category: activity
 rarity: COMMON
 weight: 8
 eligibility: {required-permission: "", blocked-permissions: [], rank-categories: [], worlds: [], required-integrations: []}
@@ -24,4 +24,3 @@ rewards:
   entries:
     experience: {type: EXPERIENCE_POINTS, amount: 180, display: "<aqua>180 experience points"}
 effects: {use-rarity-defaults: true, claim: quest-claim}
-

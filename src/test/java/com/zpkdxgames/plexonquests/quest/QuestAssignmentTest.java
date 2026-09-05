@@ -76,6 +76,47 @@ class QuestAssignmentTest {
         assertFalse(assignment.expire());
     }
 
+    @Test
+    void initialProgressCanCompleteANewMilestone() {
+        QuestAssignment assignment = QuestAssignment.create(
+                UUID.randomUUID(),
+                TestFixtures.quest("backfilled-milestone", CompletionMode.ALL, 10L),
+                "",
+                "milestone",
+                START,
+                null,
+                Map.of("objective_1", 25L));
+
+        assertEquals(AssignmentState.COMPLETED, assignment.state());
+        assertEquals(10L, assignment.objective("objective_1").orElseThrow().current());
+        assertEquals(START, assignment.completedAt().orElseThrow());
+    }
+
+    @Test
+    void rerollReservationBlocksProgressClaimAndCompetingMutations() {
+        QuestAssignment assignment = assignment(CompletionMode.ALL, 10L);
+
+        assertTrue(assignment.reserveReroll());
+        assertFalse(assignment.reserveReroll());
+        assertFalse(assignment.addProgress("objective_1", 1L, START).accepted());
+        assertFalse(assignment.forceComplete(START));
+        assertFalse(assignment.cancel());
+        assertFalse(assignment.expire());
+        assertFalse(assignment.markClaiming());
+        assertTrue(assignment.releaseReroll());
+        assertTrue(assignment.addProgress("objective_1", 1L, START).accepted());
+    }
+
+    @Test
+    void finishingRerollCancelsReservedAssignment() {
+        QuestAssignment assignment = assignment(CompletionMode.ALL, 10L);
+
+        assertTrue(assignment.reserveReroll());
+        assertTrue(assignment.finishReroll());
+        assertEquals(AssignmentState.CANCELLED, assignment.state());
+        assertFalse(assignment.releaseReroll());
+    }
+
     private static QuestAssignment assignment(CompletionMode mode, long... amounts) {
         return new QuestAssignment(
                 UUID.randomUUID(),

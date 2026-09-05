@@ -22,6 +22,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
@@ -127,7 +128,9 @@ public final class ProgressService {
         if (index == null) {
             return false;
         }
-        boolean multiQuest = configs.snapshot().settings().assignments().multiQuestProgress();
+        var settings = configs.snapshot().settings();
+        boolean multiQuest = settings.assignments().multiQuestProgress();
+        long globalCooldownMillis = settings.tracking().contributionCooldownMillis();
         boolean[] acceptedAny = {false};
         boolean[] reindex = {false};
         index.forEachCandidate(contribution, handle -> {
@@ -139,8 +142,8 @@ public final class ProgressService {
                 return;
             }
             long accepted = ObjectiveMatcher.acceptedAmount(
-                    player, handle.objective(), contribution, configs.snapshot().settings().tracking());
-            if (accepted <= 0L || !index.cooldownAllows(handle, System.nanoTime())) {
+                    player, handle.objective(), contribution, settings.tracking());
+            if (accepted <= 0L || !index.cooldownAllows(handle, System.nanoTime(), globalCooldownMillis)) {
                 return;
             }
             if (QuestProgressEvent.getHandlerList().getRegisteredListeners().length != 0) {
@@ -157,7 +160,7 @@ public final class ProgressService {
                 return;
             }
             acceptedAny[0] = true;
-            index.recordCooldown(handle, System.nanoTime());
+            index.recordCooldown(handle, System.nanoTime(), globalCooldownMillis);
             storage.markDirty(assignment);
             observer.onProgress(player, assignment, result);
             if (result.objectiveCompleted()) {
@@ -234,7 +237,7 @@ public final class ProgressService {
         private static PlayerObjectiveIndex build(PlayerProfile profile) {
             PlayerObjectiveIndex index = new PlayerObjectiveIndex();
             for (QuestAssignment assignment : profile.assignments()) {
-                if (assignment.state() != AssignmentState.ACTIVE) {
+                if (assignment.state() != AssignmentState.ACTIVE || assignment.rerollReserved()) {
                     continue;
                 }
                 for (ObjectiveProgress progress : assignment.objectives()) {
@@ -252,17 +255,19 @@ public final class ProgressService {
             }
         }
 
-        private boolean cooldownAllows(Handle handle, long nowNanos) {
-            long cooldownMillis = handle.objective().filters().cooldownMillis();
+        private boolean cooldownAllows(Handle handle, long nowNanos, long globalCooldownMillis) {
+            long cooldownMillis = Math.max(
+                    handle.objective().filters().cooldownMillis(), globalCooldownMillis);
             if (cooldownMillis <= 0L) {
                 return true;
             }
             long last = cooldowns.getOrDefault(handle.key(), Long.MIN_VALUE);
-            return last == Long.MIN_VALUE || nowNanos - last >= cooldownMillis * 1_000_000L;
+            return last == Long.MIN_VALUE
+                    || nowNanos - last >= TimeUnit.MILLISECONDS.toNanos(cooldownMillis);
         }
 
-        private void recordCooldown(Handle handle, long nowNanos) {
-            if (handle.objective().filters().cooldownMillis() > 0L) {
+        private void recordCooldown(Handle handle, long nowNanos, long globalCooldownMillis) {
+            if (Math.max(handle.objective().filters().cooldownMillis(), globalCooldownMillis) > 0L) {
                 cooldowns.put(handle.key(), nowNanos);
             }
         }

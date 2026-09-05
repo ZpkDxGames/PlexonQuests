@@ -1,6 +1,10 @@
 package com.zpkdxgames.plexonquests.config;
 
 import com.zpkdxgames.plexonquests.util.AtomicFiles;
+import com.zpkdxgames.plexonquests.quest.PoolDefinition;
+import com.zpkdxgames.plexonquests.quest.QuestDefinition;
+import com.zpkdxgames.plexonquests.quest.QuestRegistrySnapshot;
+import com.zpkdxgames.plexonquests.quest.QuestScope;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -10,9 +14,11 @@ import java.nio.file.StandardCopyOption;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicReference;
@@ -22,7 +28,24 @@ import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.plugin.java.JavaPlugin;
 
 public final class ConfigManager {
-    private static final int CURRENT_MENU_LAYOUT = 2;
+    private static final int CURRENT_MENU_LAYOUT = 3;
+    private static final int CURRENT_POOL_CATALOG = 2;
+    private static final Map<String, Integer> LEGACY_DAILY_QUESTS = Map.of(
+            "stonebound", 12,
+            "timber-trail", 12,
+            "anglers-call", 8,
+            "harvest-moon", 10,
+            "monster-patrol", 9,
+            "artisan-hours", 10,
+            "world-wanderer", 8,
+            "steady-hand", 9);
+    private static final Map<String, Integer> LEGACY_WEEKLY_QUESTS = Map.of(
+            "deep-delver", 12,
+            "master-angler", 9,
+            "realm-walker", 8,
+            "hunters-ledger", 10,
+            "community-merchant", 6,
+            "tool-forged", 6);
     private static final List<String> DEFAULT_RESOURCES = List.of(
             "config.yml",
             "messages.yml",
@@ -39,14 +62,29 @@ public final class ConfigManager {
             "quests/daily/artisan-hours.yml",
             "quests/daily/world-wanderer.yml",
             "quests/daily/steady-hand.yml",
+            "quests/daily/adventurers-shift.yml",
+            "quests/daily/arcane-practice.yml",
+            "quests/daily/builders-blueprint.yml",
+            "quests/daily/nether-forager.yml",
+            "quests/daily/ore-prospector.yml",
+            "quests/daily/redstone-workshop.yml",
+            "quests/daily/smelters-shift.yml",
             "quests/weekly/deep-delver.yml",
             "quests/weekly/master-angler.yml",
             "quests/weekly/realm-walker.yml",
             "quests/weekly/hunters-ledger.yml",
             "quests/weekly/community-merchant.yml",
             "quests/weekly/tool-forged.yml",
+            "quests/weekly/arcane-arsenal.yml",
+            "quests/weekly/harvest-festival.yml",
+            "quests/weekly/industrial-output.yml",
+            "quests/weekly/makers-mark.yml",
+            "quests/weekly/nether-quarry.yml",
+            "quests/weekly/week-in-motion.yml",
             "quests/milestones/first-steps.yml",
+            "quests/milestones/quest-apprentice.yml",
             "quests/milestones/quest-veteran.yml",
+            "quests/milestones/quest-champion.yml",
             "quests/milestones/quest-legend.yml",
             "quests/milestones/first-rankup.yml");
 
@@ -113,7 +151,10 @@ public final class ConfigManager {
 
         List<String> activationErrors = new ArrayList<>();
         validateMenus(menus, activationErrors);
-        var registry = new DefinitionLoader(dataDirectory).load();
+        QuestRegistrySnapshot registry = new DefinitionLoader(
+                        dataDirectory, settings.rotation().recentHistoryExclusion())
+                .load();
+        registry = withPoolCapacityWarnings(registry, settings);
         if (registry.quests().isEmpty()) {
             activationErrors.add("No valid quests were loaded");
         }
@@ -148,7 +189,92 @@ public final class ConfigManager {
                 plugin.saveResource(resource, false);
             }
         }
+        migrateDefaultPool("pools/daily.yml", "DAILY", 3, "7d", List.of("gathering"), 2, LEGACY_DAILY_QUESTS);
+        migrateDefaultPool("pools/weekly.yml", "WEEKLY", 2, "21d", List.of(), 1, LEGACY_WEEKLY_QUESTS);
         migrateMenus();
+    }
+
+    private void migrateDefaultPool(
+            String resource,
+            String scope,
+            int baseAssignments,
+            String historyExclusion,
+            List<String> guaranteedCategories,
+            int maximumPerCategory,
+            Map<String, Integer> legacyQuests) throws IOException {
+        Path path = dataDirectory.resolve(resource).normalize();
+        String existing = Files.readString(path, StandardCharsets.UTF_8);
+        YamlConfiguration pool = new YamlConfiguration();
+        try {
+            pool.loadFromString(existing);
+        } catch (InvalidConfigurationException exception) {
+            return;
+        }
+        int catalog = pool.getInt("catalog-version", 1);
+        String expectedId = Path.of(resource).getFileName().toString().replace(".yml", "");
+        if (catalog >= CURRENT_POOL_CATALOG || !isLegacyDefaultPool(
+                pool,
+                expectedId,
+                scope,
+                baseAssignments,
+                historyExclusion,
+                guaranteedCategories,
+                maximumPerCategory,
+                legacyQuests)) {
+            return;
+        }
+
+        Path backup = dataDirectory.resolve("backups")
+                .resolve(expectedId + "-catalog-v" + catalog + "-" + Instant.now().toEpochMilli() + ".yml");
+        Files.copy(path, backup, StandardCopyOption.COPY_ATTRIBUTES);
+        try (InputStream bundled = plugin.getResource(resource)) {
+            if (bundled == null) {
+                throw new IOException("Bundled " + resource + " is missing");
+            }
+            AtomicFiles.writeUtf8(path, new String(bundled.readAllBytes(), StandardCharsets.UTF_8));
+        }
+        plugin.getLogger().info("Upgraded " + resource + " to catalog version " + CURRENT_POOL_CATALOG
+                + "; previous pool saved as " + backup.getFileName());
+    }
+
+    private static boolean isLegacyDefaultPool(
+            YamlConfiguration pool,
+            String id,
+            String scope,
+            int baseAssignments,
+            String historyExclusion,
+            List<String> guaranteedCategories,
+            int maximumPerCategory,
+            Map<String, Integer> legacyQuests) {
+        ConfigurationSection quests = pool.getConfigurationSection("quests");
+        if (quests == null) {
+            return false;
+        }
+        Map<String, Integer> weights = new LinkedHashMap<>();
+        quests.getKeys(false).forEach(questId -> weights.put(questId, quests.getInt(questId)));
+        ConfigurationSection mix = pool.getConfigurationSection("mix");
+        return pool.getKeys(false).equals(Set.of(
+                        "schema-version",
+                        "id",
+                        "enabled",
+                        "scope",
+                        "base-assignments",
+                        "prevent-duplicates",
+                        "recent-history-exclusion",
+                        "mix",
+                        "quests"))
+                && mix != null
+                && mix.getKeys(false).equals(Set.of("guaranteed-categories", "maximum-per-category"))
+                && pool.getInt("schema-version", -1) == 1
+                && id.equals(pool.getString("id", ""))
+                && pool.getBoolean("enabled", false)
+                && scope.equalsIgnoreCase(pool.getString("scope", ""))
+                && pool.getInt("base-assignments", -1) == baseAssignments
+                && pool.getBoolean("prevent-duplicates", false)
+                && historyExclusion.equalsIgnoreCase(pool.getString("recent-history-exclusion", ""))
+                && guaranteedCategories.equals(pool.getStringList("mix.guaranteed-categories"))
+                && pool.getInt("mix.maximum-per-category", -1) == maximumPerCategory
+                && legacyQuests.equals(weights);
     }
 
     private void migrateMenus() throws IOException {
@@ -205,6 +331,65 @@ public final class ConfigManager {
         validateMenu(yaml, "admin", "quest-slots", errors);
         validateMenu(yaml, "settings", null, errors);
         validateMenu(yaml, "confirmation", null, errors);
+    }
+
+    private static QuestRegistrySnapshot withPoolCapacityWarnings(
+            QuestRegistrySnapshot registry, PluginSettings settings) {
+        List<ValidationIssue> issues = new ArrayList<>(registry.issues());
+        for (PoolDefinition pool : registry.pools().values()) {
+            int target = pool.scope() == QuestScope.DAILY
+                    ? settings.assignments().maximumDailySlots()
+                    : settings.assignments().maximumWeeklySlots();
+            List<QuestDefinition> enabled = pool.questWeights().keySet().stream()
+                    .map(registry.quests()::get)
+                    .filter(Objects::nonNull)
+                    .filter(QuestDefinition::enabled)
+                    .toList();
+            int capacity = constrainedCapacity(enabled, pool);
+            if (capacity < target) {
+                issues.add(new ValidationIssue(
+                        ValidationIssue.Severity.WARNING,
+                        pool.source() + ".quests",
+                        "Pool can supply at most " + capacity + " unique quest(s), below the configured "
+                                + target + "-slot maximum"));
+            }
+            List<QuestDefinition> unconditional = enabled.stream()
+                    .filter(ConfigManager::unconditionallyEligible)
+                    .toList();
+            int unconditionalCapacity = constrainedCapacity(unconditional, pool);
+            if (unconditionalCapacity < target) {
+                issues.add(new ValidationIssue(
+                        ValidationIssue.Severity.WARNING,
+                        pool.source() + ".eligibility",
+                        "Only " + unconditionalCapacity + " slot(s) are guaranteed without optional permissions, "
+                                + "world restrictions, ranks, or integrations; configured maximum is " + target));
+            }
+        }
+        return new QuestRegistrySnapshot(
+                registry.quests(), registry.pools(), registry.rarities(), issues, registry.loadedAt());
+    }
+
+    private static int constrainedCapacity(List<QuestDefinition> quests, PoolDefinition pool) {
+        int categoryCapacity = quests.stream()
+                .collect(java.util.stream.Collectors.groupingBy(QuestDefinition::category, java.util.stream.Collectors.counting()))
+                .values().stream()
+                .mapToInt(count -> (int) Math.min(count, pool.maximumPerCategory()))
+                .sum();
+        int rarityCapacity = quests.stream()
+                .collect(java.util.stream.Collectors.groupingBy(QuestDefinition::rarity, java.util.stream.Collectors.counting()))
+                .entrySet().stream()
+                .mapToInt(entry -> (int) Math.min(
+                        entry.getValue(), pool.maximumPerRarity().getOrDefault(entry.getKey(), Integer.MAX_VALUE)))
+                .sum();
+        return Math.min(quests.size(), Math.min(categoryCapacity, rarityCapacity));
+    }
+
+    private static boolean unconditionallyEligible(QuestDefinition quest) {
+        return quest.eligibility().requiredPermission().isBlank()
+                && quest.eligibility().blockedPermissions().isEmpty()
+                && quest.eligibility().rankCategories().isEmpty()
+                && quest.eligibility().worlds().isEmpty()
+                && quest.eligibility().requiredIntegrations().isEmpty();
     }
 
     private static void validateMenu(YamlConfiguration yaml, String path, String primarySlots, List<String> errors) {
