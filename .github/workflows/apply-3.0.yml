@@ -3,7 +3,9 @@ name: Apply PlexonQuests 3.0 source update
 on:
   push:
     branches: [agent/plexonquests-3.0.0]
-    paths: ['tools/apply_3_0.py']
+    paths:
+      - 'tools/apply_3_0.py'
+      - 'tools/retry_3_0'
 
 permissions:
   contents: write
@@ -23,13 +25,27 @@ jobs:
           cache: maven
       - name: Apply 3.0 source transformation
         run: python tools/apply_3_0.py
+      - name: Apply compile correction
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('src/main/java/com/zpkdxgames/plexonquests/presentation/TextService.java')
+          lines = path.read_text(encoding='utf-8').splitlines()
+          lines = [
+              r'            String replacement = allowed ? matcher.group() : "\\" + matcher.group();'
+              if 'String replacement = allowed ? matcher.group()' in line else line
+              for line in lines
+          ]
+          path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+          PY
       - name: Verify patch formatting
         run: git diff --check
       - name: Compile and test transformed source
         run: mvn -B -ntp clean verify
       - name: Commit transformed source
         run: |
-          rm -f tools/apply_3_0.py .github/workflows/apply-3.0.yml
+          rm -f tools/apply_3_0.py tools/retry_3_0 .github/workflows/apply-3.0.yml
           git config user.name "Tonim"
           git config user.email "99552287+ZpkDxGames@users.noreply.github.com"
           git add -A
