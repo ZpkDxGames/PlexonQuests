@@ -4,6 +4,21 @@ All YAML files use `schema-version: 1`. PlexonQuests installs missing defaults w
 
 Definition errors include an exact file/key path. An invalid quest or pool is quarantined where possible; startup/reload is rejected if no usable quest, rotating pool, rarity, or valid menu layout remains.
 
+## PlexonCore compatibility in 3.1.0
+
+PlexonQuests 3.1.0 requires **no configuration migration** to adopt PlexonCore. Existing 3.0.0 `config.yml`, `messages.yml`, `menus.yml`, `effects.yml`, pools, quests, and database/player data remain valid and stay under `plugins/PlexonQuests/`.
+
+No required `core:` section is added in 3.1.0. Runtime behavior is automatic:
+
+```text
+compatible PlexonCore 1.x present -> CORE mode
+PlexonCore absent/unavailable      -> STANDALONE compatibility mode
+```
+
+`/quests reload` reloads PlexonQuests only; it does not reload PlexonCore. A rejected candidate keeps the previous live Quests configuration and an otherwise healthy Core module registration intact. Core adoption does not replace the Quests configuration validator, backup/migration logic, or MiniMessage pre-validation.
+
+See [PLEXONCORE.md](PLEXONCORE.md) for module registration, diagnostics, upgrade, and rollback behavior.
+
 ## Files
 
 | Path | Purpose |
@@ -64,6 +79,8 @@ Configure free daily/weekly counts, a per-period maximum, and optional Vault pri
 
 SQLite uses WAL, a single bounded writer, batched dirty progress, periodic checkpoints, and a shutdown deadline. Retention maintenance runs at startup and daily. Reducing history limits deletes old history on the next maintenance pass; take a backup first.
 
+PlexonQuests 3.1.0 deliberately keeps this `StorageService`; it does not migrate Quests persistence into PlexonCore's shared SQLite helpers.
+
 ### `claims`
 
 - `manual-by-default`: default policy for content authors.
@@ -73,6 +90,8 @@ SQLite uses WAL, a single bounded writer, batched dirty progress, periodic check
 ### `feedback`, `security`, and `diagnostics`
 
 Feedback controls join reminders, pin presentation, thresholds, and throttles. Security bounds command/menu frequency, numbered permission scanning, and serialized item size. Diagnostics toggles sampling details; it does not place database work on gameplay event handlers.
+
+In 3.1.0 `/quests diagnostics` also exposes a live `PLEXON_CORE` state. This is diagnostic output, not a new configuration dependency.
 
 ## Quest definition
 
@@ -190,3 +209,5 @@ Weights must be positive and every referenced quest must exist, survive validati
 ## MiniMessage safety
 
 Configuration-authored strings may contain MiniMessage formatting. Runtime values such as player names, counts, objective text, provider details, and transaction IDs are inserted as literal components, not reparsed as markup. Keep click/hover actions in trusted configuration only.
+
+3.1.0 keeps the existing Quests text/rendering service as the authoritative quest-specific layer. Core adoption does not reinterpret untrusted runtime values as MiniMessage and does not require a new text configuration format.
