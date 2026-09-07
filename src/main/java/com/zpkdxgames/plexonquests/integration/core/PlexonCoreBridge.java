@@ -2,7 +2,6 @@ package com.zpkdxgames.plexonquests.integration.core;
 
 import com.zpkdxgames.plexoncore.api.PlexonCoreAPI;
 import com.zpkdxgames.plexoncore.api.PlexonCoreAPI.CoreVersion;
-import com.zpkdxgames.plexoncore.integration.IntegrationRegistry;
 import com.zpkdxgames.plexoncore.module.ModuleRegistry;
 import com.zpkdxgames.plexoncore.module.ModuleRegistry.ModuleDescriptor;
 import com.zpkdxgames.plexoncore.module.ModuleRegistry.ModuleState;
@@ -166,8 +165,7 @@ public final class PlexonCoreBridge implements CoreBridge {
         return core.integrations().get(integrationId).map(view -> switch (view.state()) {
             case READY -> ProviderHint.PRESENT;
             case MISSING -> ProviderHint.MISSING;
-            case DEGRADED -> ProviderHint.DISABLED;
-            case INCOMPATIBLE, FAILED -> ProviderHint.UNKNOWN;
+            case DEGRADED, INCOMPATIBLE, FAILED -> ProviderHint.UNKNOWN;
         }).orElse(ProviderHint.UNKNOWN);
     }
 }
