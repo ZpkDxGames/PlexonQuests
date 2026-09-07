@@ -1,7 +1,10 @@
 package com.zpkdxgames.plexonquests.integration;
 
+import com.zpkdxgames.plexonquests.config.ConfigManager;
 import com.zpkdxgames.plexonquests.objective.Contribution;
 import com.zpkdxgames.plexonquests.objective.ObjectiveType;
+import com.zpkdxgames.plexonquests.rotation.RotationService;
+import com.zpkdxgames.plexonquests.service.ProfileService;
 import com.zpkdxgames.plexonquests.service.ProgressService;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -90,17 +93,13 @@ public final class IntegrationManager {
         }
     }
 
-    public void registerProgressBridges(ProgressService progress) {
-        registerPlayerEvent(
-                "PlexonRanks",
-                "com.zpkdxgames.plexonranks.event.PlexonRankupEvent",
-                ObjectiveType.PLEXON_RANK_UP,
-                progress);
-        registerPlayerEvent(
-                "PlexonDailyRewards",
-                "com.zpkdxgames.plexondailyrewards.event.DailyRewardClaimedEvent",
-                ObjectiveType.PLEXON_DAILY_REWARD_CLAIM,
-                progress);
+    public void registerProgressBridges(
+            ProgressService progress,
+            ProfileService profiles,
+            RotationService rotations,
+            ConfigManager configs) {
+        IntegrationContext context = new IntegrationContext(plugin, configs, progress, profiles, rotations);
+        PlexonIntegrationAdapters.all().forEach(adapter -> adapter.register(context));
     }
 
     private void registerPlayerEvent(
@@ -190,7 +189,7 @@ public final class IntegrationManager {
                 "com.antondev.keys.event.PlexonKeyEarnedEvent",
                 "com.antondev.keys.event.PlexonKeyClaimedEvent")));
         descriptors.put("PLEXON_CRATES", new Descriptor("PlexonCrates", Set.of(
-                "com.antondev.crates.event.PlexonCrateOpenedEvent")));
+                "com.antondev.crates.api.event.CrateOpenEvent")));
         descriptors.put("PLEXON_SHOPS", new Descriptor("PlexonShops", Set.of(
                 "com.plexon.shops.event.PlexonShopVisitedEvent",
                 "com.plexon.shops.event.PlexonShopRatedEvent",

@@ -22,6 +22,7 @@ public record PluginSettings(
         Claims claims,
         Feedback feedback,
         Security security,
+        Text text,
         Diagnostics diagnostics) {
 
     public record Rotation(
@@ -105,6 +106,17 @@ public record PluginSettings(
             long guiClickCooldownMillis,
             int maximumNumberedPermission,
             int maximumSerializedItemBytes) {}
+
+    public enum PlaceholderRenderingMode {
+        SAFE,
+        LEGACY,
+        MINIMESSAGE
+    }
+
+    public record Text(
+            PlaceholderRenderingMode defaultPlaceholderRendering,
+            boolean allowLegacy,
+            boolean allowMiniMessage) {}
 
     public record Diagnostics(boolean debugTiming, int timingSampleRate) {}
 
@@ -190,6 +202,14 @@ public record PluginSettings(
                 positive(yaml, "security.maximum-numbered-permission", 20),
                 positive(yaml, "security.maximum-serialized-item-bytes", 65536));
 
+        Text text = new Text(
+                enumValue(
+                        PlaceholderRenderingMode.class,
+                        yaml.getString("text.placeholder-rendering.default"),
+                        PlaceholderRenderingMode.SAFE),
+                yaml.getBoolean("text.placeholder-rendering.allow-legacy", true),
+                yaml.getBoolean("text.placeholder-rendering.allow-minimessage", true));
+
         Diagnostics diagnostics = new Diagnostics(
                 yaml.getBoolean("diagnostics.debug-timing", false),
                 positive(yaml, "diagnostics.timing-sample-rate", 1000));
@@ -198,7 +218,7 @@ public record PluginSettings(
                 || assignments.maximumWeeklySlots() < assignments.baseWeeklySlots()) {
             throw new IllegalArgumentException("Assignment maximum slots cannot be lower than base slots");
         }
-        return new PluginSettings(rotation, assignments, rank, rerolls, tracking, storage, claims, feedback, security, diagnostics);
+        return new PluginSettings(rotation, assignments, rank, rerolls, tracking, storage, claims, feedback, security, text, diagnostics);
     }
 
     private static Duration duration(YamlConfiguration yaml, String path, String fallback) {

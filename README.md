@@ -15,7 +15,7 @@ There are no hard plugin dependencies. PlaceholderAPI, Vault, LuckPerms, and sup
 ## Installation
 
 1. Build with `mvn -B -ntp clean verify`, or download the JAR from the [latest GitHub release](https://github.com/ZpkDxGames/PlexonQuests/releases/latest).
-2. Copy `PlexonQuests-2.0.1.jar` into the server's `plugins` directory.
+2. Copy `PlexonQuests-3.0.0.jar` into the server's `plugins` directory.
 3. Start Paper once to create `plugins/PlexonQuests/` and the default definitions.
 4. Run `/quests validate` and `/quests diagnostics` as an operator.
 5. Review the reset timezone, worlds, rewards, and optional integration requirements before opening the server to players.
@@ -50,9 +50,10 @@ The clean install includes 15 daily quests, 12 weekly quests, 6 milestones, two 
 | PlaceholderAPI | `%plexonquests_*%` placeholders |
 | Vault | Paid rerolls and money rewards |
 | LuckPerms | Permission rewards |
-| PlexonRanks | Rank-category slot bonuses and rank-up progress |
-| Plexon DailyRewards | Successful daily-reward claim progress |
-| PlexonTools, PlexonKeys, PlexonCrates, PlexonShops | Compatibility status and eligibility gating; progress must use a verified public event/API or `submitProgress` |
+| PlexonRanks | Rank-category slot bonuses, rank metadata filters, immediate slot refresh, durable rank-up progress |
+| PlexonCrates | Crate-open progress from the public `CrateOpenEvent`, including transaction-safe deduplication and crate/key/reward metadata |
+| Plexon DailyRewards | Successful claim progress with tier/day metadata and duplicate-resistant daily source tokens |
+| PlexonTools, PlexonKeys, PlexonShops | Adapter-ready; activates only when the installed provider exposes the supported public event contract. Current provider builds without that contract remain fail-closed and are reported by diagnostics. |
 
 Unsupported or missing API surfaces are reported as unavailable. PlexonQuests does not scrape lore, chat, commands, or internal plugin state.
 
@@ -64,6 +65,7 @@ Unsupported or missing API surfaces are reported as unavailable. PlexonQuests do
 - [Backup, migration, and recovery](docs/RECOVERY.md)
 - [Performance model and profiling](docs/PERFORMANCE.md)
 - [Live staging checklist](docs/STAGING.md)
+- [Integration contracts and metadata](docs/INTEGRATIONS.md)
 
 ## Building and testing
 

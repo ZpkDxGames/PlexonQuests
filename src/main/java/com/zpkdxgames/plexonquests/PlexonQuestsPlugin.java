@@ -87,7 +87,7 @@ public class PlexonQuestsPlugin extends JavaPlugin {
             registerCommand(assignments, rewards, menus, text);
             registerApi(assignments, menus);
             registerPlaceholderApi(text);
-            integrations.registerProgressBridges(progress);
+            integrations.registerProgressBridges(progress, profiles, rotations, configs);
 
             effects.start();
             activity = new ActivitySampler(this, configs, progress);

@@ -1,6 +1,7 @@
 package com.zpkdxgames.plexonquests.presentation;
 
 import com.zpkdxgames.plexonquests.config.ConfigManager;
+import com.zpkdxgames.plexonquests.config.PluginSettings.PlaceholderRenderingMode;
 import java.lang.reflect.InvocationTargetException;
 import java.text.NumberFormat;
 import java.time.Duration;
@@ -9,6 +10,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.TextComponent;
 import net.kyori.adventure.text.format.TextDecoration;
@@ -17,12 +21,24 @@ import net.kyori.adventure.text.minimessage.MiniMessage;
 import net.kyori.adventure.text.minimessage.tag.Tag;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
 import net.kyori.adventure.text.minimessage.tag.resolver.TagResolver;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.entity.Player;
 
 public final class TextService {
+    private static final Pattern MINI_TAG = Pattern.compile("<(/?)([^<>]+)>");
+    private static final Set<String> TRUSTED_TAGS = Set.of(
+            "color", "gradient", "rainbow", "bold", "b", "italic", "i", "underlined", "u",
+            "strikethrough", "st", "reset", "black", "dark_blue", "dark_green", "dark_aqua",
+            "dark_red", "dark_purple", "gold", "gray", "dark_gray", "blue", "green", "aqua",
+            "red", "light_purple", "yellow", "white");
+
     private final ConfigManager configs;
     private final MiniMessage miniMessage = MiniMessage.miniMessage();
+    private final LegacyComponentSerializer legacy = LegacyComponentSerializer.builder()
+            .character('&')
+            .hexColors()
+            .build();
     private final PlainTextComponentSerializer plain = PlainTextComponentSerializer.plainText();
 
     public TextService(ConfigManager configs) {
@@ -57,9 +73,25 @@ public final class TextService {
         });
         components.forEach((key, value) -> resolvers.add(Placeholder.component(key, value == null ? Component.empty() : value)));
         if (player != null && placeholderApiAvailable()) {
+            var rendering = configs.snapshot().settings().text();
             resolvers.add(TagResolver.resolver("papi", (arguments, context) -> {
                 String identifier = arguments.popOr("Expected a PlaceholderAPI identifier").value();
-                return Tag.inserting(Component.text(applyPlaceholderApi(player, "%" + identifier + "%")));
+                return Tag.inserting(renderPlaceholder(
+                        player, identifier, rendering.defaultPlaceholderRendering()));
+            }));
+            resolvers.add(TagResolver.resolver("papi_legacy", (arguments, context) -> {
+                String identifier = arguments.popOr("Expected a PlaceholderAPI identifier").value();
+                PlaceholderRenderingMode mode = rendering.allowLegacy()
+                        ? PlaceholderRenderingMode.LEGACY
+                        : PlaceholderRenderingMode.SAFE;
+                return Tag.inserting(renderPlaceholder(player, identifier, mode));
+            }));
+            resolvers.add(TagResolver.resolver("papi_mm", (arguments, context) -> {
+                String identifier = arguments.popOr("Expected a PlaceholderAPI identifier").value();
+                PlaceholderRenderingMode mode = rendering.allowMiniMessage()
+                        ? PlaceholderRenderingMode.MINIMESSAGE
+                        : PlaceholderRenderingMode.SAFE;
+                return Tag.inserting(renderPlaceholder(player, identifier, mode));
             }));
         }
         TagResolver.Builder resolver = TagResolver.builder();
@@ -174,6 +206,31 @@ public final class TextService {
             values.put(String.valueOf(pairs[index]), String.valueOf(pairs[index + 1]));
         }
         return Map.copyOf(values);
+    }
+
+    private Component renderPlaceholder(Player player, String identifier, PlaceholderRenderingMode mode) {
+        String value = applyPlaceholderApi(player, "%" + identifier + "%");
+        return switch (mode) {
+            case SAFE -> Component.text(value);
+            case LEGACY -> legacy.deserialize(value);
+            case MINIMESSAGE -> miniMessage.deserialize(whitelistTrustedMiniMessage(value));
+        };
+    }
+
+    private static String whitelistTrustedMiniMessage(String value) {
+        Matcher matcher = MINI_TAG.matcher(value == null ? "" : value);
+        StringBuffer output = new StringBuffer();
+        while (matcher.find()) {
+            String body = matcher.group(2).trim();
+            int colon = body.indexOf(':');
+            String name = (colon < 0 ? body : body.substring(0, colon)).toLowerCase(Locale.ROOT);
+            boolean hex = name.matches("#[0-9a-f]{6}");
+            boolean allowed = hex || TRUSTED_TAGS.contains(name);
+            String replacement = allowed ? matcher.group() : "\\" + matcher.group();
+            matcher.appendReplacement(output, Matcher.quoteReplacement(replacement));
+        }
+        matcher.appendTail(output);
+        return output.toString();
     }
 
     private boolean placeholderApiAvailable() {

@@ -1,5 +1,9 @@
 package com.zpkdxgames.plexonquests.objective;
 
+import java.util.LinkedHashMap;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
 import org.bukkit.GameMode;
 import org.bukkit.Material;
 import org.bukkit.World;
@@ -26,9 +30,60 @@ public record Contribution(
         boolean unique,
         String movementType,
         String advancementKey,
+        Map<String, String> metadata,
         String sourceToken) {
 
+    public Contribution {
+        Map<String, String> normalized = new LinkedHashMap<>();
+        if (metadata != null) {
+            metadata.forEach((key, value) -> {
+                if (key != null && !key.isBlank()) {
+                    normalized.put(
+                            key.trim().toLowerCase(Locale.ROOT),
+                            Objects.requireNonNullElse(value, "").trim());
+                }
+            });
+        }
+        metadata = Map.copyOf(normalized);
+        sourceToken = Objects.requireNonNullElse(sourceToken, "");
+    }
+
+    /** Compatibility constructor retained for core 2.x listeners and external source compatibility. */
+    public Contribution(
+            ObjectiveType type,
+            long amount,
+            Material material,
+            EntityType entityType,
+            EntityDamageEvent.DamageCause damageCause,
+            CreatureSpawnEvent.SpawnReason spawnReason,
+            String world,
+            World.Environment worldEnvironment,
+            GameMode gameMode,
+            boolean originKnown,
+            boolean natural,
+            boolean mature,
+            boolean hostile,
+            boolean teleport,
+            boolean unique,
+            String movementType,
+            String advancementKey,
+            String sourceToken) {
+        this(
+                type, amount, material, entityType, damageCause, spawnReason, world, worldEnvironment, gameMode,
+                originKnown, natural, mature, hostile, teleport, unique, movementType, advancementKey,
+                Map.of(), sourceToken);
+    }
+
     public static Contribution simple(ObjectiveType type, long amount, Player player) {
+        return integration(type, amount, player, Map.of(), "");
+    }
+
+    public static Contribution integration(
+            ObjectiveType type,
+            long amount,
+            Player player,
+            Map<String, String> metadata,
+            String sourceToken) {
         return new Contribution(
                 type,
                 amount,
@@ -47,7 +102,7 @@ public record Contribution(
                 true,
                 "",
                 "",
-                "");
+                metadata,
+                sourceToken);
     }
 }
-

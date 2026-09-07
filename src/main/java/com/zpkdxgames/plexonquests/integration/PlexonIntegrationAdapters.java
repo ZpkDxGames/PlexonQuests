@@ -130,7 +130,7 @@ final class PlexonIntegrationAdapters {
             return value instanceof Player player ? player : null;
         }
 
-        final void warnUnavailable(IntegrationContext context, ReflectiveOperationException | LinkageError exception) {
+        final void warnUnavailable(IntegrationContext context, Throwable exception) {
             context.plugin().getLogger().log(
                     Level.WARNING,
                     "Supported public API for " + id + " could not be registered; integration remains fail-closed",

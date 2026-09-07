@@ -4,6 +4,7 @@ import com.zpkdxgames.plexonquests.objective.ObjectiveDefinition;
 import com.zpkdxgames.plexonquests.objective.ObjectiveFilters;
 import com.zpkdxgames.plexonquests.objective.ObjectiveType;
 import com.zpkdxgames.plexonquests.objective.OriginPolicy;
+import com.zpkdxgames.plexonquests.objective.matcher.IntegrationObjectiveFilters;
 import com.zpkdxgames.plexonquests.quest.ClaimMode;
 import com.zpkdxgames.plexonquests.quest.CompletionMode;
 import com.zpkdxgames.plexonquests.quest.IconDefinition;
@@ -316,6 +317,7 @@ public final class DefinitionLoader {
                 throw invalid(path + "." + id + ".amount", "must be positive");
             }
             ObjectiveFilters filters = parseFilters(objective.getConfigurationSection("filters"), path + "." + id + ".filters");
+            IntegrationObjectiveFilters.validate(type, filters.extras());
             output.put(id, new ObjectiveDefinition(id, type, amount, objective.getString("display", id), filters));
         }
         return output;

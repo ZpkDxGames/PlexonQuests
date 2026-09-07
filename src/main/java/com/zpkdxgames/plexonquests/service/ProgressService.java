@@ -184,7 +184,7 @@ public final class ProgressService {
                 value.type(), value.amount(), value.material(), value.entityType(), value.damageCause(), value.spawnReason(),
                 value.world(), value.worldEnvironment(), value.gameMode(), value.originKnown(), value.natural(),
                 value.mature(), value.hostile(), value.teleport(), value.unique(), value.movementType(),
-                value.advancementKey(), "");
+                value.advancementKey(), value.metadata(), "");
     }
 
     private static final class SourceTokens {
