@@ -1,6 +1,7 @@
 package com.zpkdxgames.plexonquests.integration;
 
 import com.zpkdxgames.plexonquests.config.ConfigManager;
+import com.zpkdxgames.plexonquests.integration.core.CoreBridge;
 import com.zpkdxgames.plexonquests.objective.Contribution;
 import com.zpkdxgames.plexonquests.objective.ObjectiveType;
 import com.zpkdxgames.plexonquests.rotation.RotationService;
@@ -29,32 +30,46 @@ public final class IntegrationManager {
     private static final Map<String, Descriptor> DESCRIPTORS = descriptors();
 
     private final JavaPlugin plugin;
+    private final CoreBridge core;
     private volatile Map<String, IntegrationState> states = Map.of();
     private final Listener bridgeListener = new Listener() {};
 
-    public IntegrationManager(JavaPlugin plugin) {
+    public IntegrationManager(JavaPlugin plugin, CoreBridge core) {
         this.plugin = plugin;
+        this.core = core;
+    }
+
+    public CoreBridge core() {
+        return core;
     }
 
     public void detect() {
         Map<String, IntegrationState> detected = new LinkedHashMap<>();
         DESCRIPTORS.forEach((id, descriptor) -> detected.put(id, inspect(id, descriptor)));
         states = Map.copyOf(detected);
+        if ("READY".equals(core.registrationState()) || "DEGRADED".equals(core.registrationState())) {
+            core.markReady("Quest engine ready; integration compatibility refreshed");
+        }
     }
 
     public boolean available(String id) {
-        IntegrationState state = states.get(normalize(id));
-        return state != null && state.status() == IntegrationStatus.AVAILABLE;
+        return state(id).status() == IntegrationStatus.AVAILABLE;
     }
 
     public IntegrationState state(String id) {
+        String normalized = normalize(id);
+        if ("PLEXON_CORE".equals(normalized)) {
+            return coreState();
+        }
         return states.getOrDefault(
-                normalize(id),
-                new IntegrationState(normalize(id), id, IntegrationStatus.MISSING, "", "Unknown integration"));
+                normalized,
+                new IntegrationState(normalized, id, IntegrationStatus.MISSING, "", "Unknown integration"));
     }
 
     public Map<String, IntegrationState> states() {
-        return states;
+        Map<String, IntegrationState> snapshot = new LinkedHashMap<>(states);
+        snapshot.put("PLEXON_CORE", coreState());
+        return Map.copyOf(snapshot);
     }
 
     public String rankCategory(UUID playerId, Set<String> configuredCategories) {
@@ -141,6 +156,19 @@ public final class IntegrationManager {
     }
 
     private IntegrationState inspect(String id, Descriptor descriptor) {
+        CoreBridge.ProviderHint hint = core.providerHint(id);
+        if (hint == CoreBridge.ProviderHint.MISSING) {
+            return new IntegrationState(
+                    id, descriptor.pluginName(), IntegrationStatus.MISSING, "", "PlexonCore reports plugin is not installed");
+        }
+        if (hint == CoreBridge.ProviderHint.DISABLED) {
+            Plugin disabled = Bukkit.getPluginManager().getPlugin(descriptor.pluginName());
+            String version = disabled == null ? "" : disabled.getPluginMeta().getVersion();
+            return new IntegrationState(
+                    id, descriptor.pluginName(), IntegrationStatus.DISABLED, version,
+                    "PlexonCore reports plugin is installed but disabled");
+        }
+
         Plugin provider = Bukkit.getPluginManager().getPlugin(descriptor.pluginName());
         if (provider == null) {
             return new IntegrationState(id, descriptor.pluginName(), IntegrationStatus.MISSING, "", "Plugin is not installed");
@@ -168,6 +196,24 @@ public final class IntegrationManager {
                 IntegrationStatus.AVAILABLE,
                 provider.getPluginMeta().getVersion(),
                 "Ready");
+    }
+
+    private IntegrationState coreState() {
+        IntegrationStatus status;
+        if (!core.installed()) {
+            status = IntegrationStatus.MISSING;
+        } else if (!core.compatible() && !"-".equals(core.apiVersion())) {
+            status = IntegrationStatus.INCOMPATIBLE;
+        } else if (!core.available()) {
+            status = IntegrationStatus.UNAVAILABLE_MISSING_API;
+        } else {
+            status = IntegrationStatus.AVAILABLE;
+        }
+        String detail = "API " + core.apiVersion()
+                + " | supported " + CoreBridge.SUPPORTED_API_RANGE
+                + " | module " + CoreBridge.MODULE_ID + " " + core.registrationState()
+                + " | mode " + core.mode();
+        return new IntegrationState("PLEXON_CORE", "PlexonCore", status, core.pluginVersion(), detail);
     }
 
     private static String normalize(String id) {
@@ -201,4 +247,3 @@ public final class IntegrationManager {
 
     private record Descriptor(String pluginName, Set<String> requiredClasses) {}
 }
-
