@@ -46,7 +46,6 @@ public final class IntegrationManager {
     public void detect() {
         Map<String, IntegrationState> detected = new LinkedHashMap<>();
         DESCRIPTORS.forEach((id, descriptor) -> detected.put(id, inspect(id, descriptor)));
-        detected.put("PLEXON_CORE", coreState());
         states = Map.copyOf(detected);
         if ("READY".equals(core.registrationState()) || "DEGRADED".equals(core.registrationState())) {
             core.markReady("Quest engine ready; integration compatibility refreshed");
@@ -54,18 +53,23 @@ public final class IntegrationManager {
     }
 
     public boolean available(String id) {
-        IntegrationState state = states.get(normalize(id));
-        return state != null && state.status() == IntegrationStatus.AVAILABLE;
+        return state(id).status() == IntegrationStatus.AVAILABLE;
     }
 
     public IntegrationState state(String id) {
+        String normalized = normalize(id);
+        if ("PLEXON_CORE".equals(normalized)) {
+            return coreState();
+        }
         return states.getOrDefault(
-                normalize(id),
-                new IntegrationState(normalize(id), id, IntegrationStatus.MISSING, "", "Unknown integration"));
+                normalized,
+                new IntegrationState(normalized, id, IntegrationStatus.MISSING, "", "Unknown integration"));
     }
 
     public Map<String, IntegrationState> states() {
-        return states;
+        Map<String, IntegrationState> snapshot = new LinkedHashMap<>(states);
+        snapshot.put("PLEXON_CORE", coreState());
+        return Map.copyOf(snapshot);
     }
 
     public String rankCategory(UUID playerId, Set<String> configuredCategories) {
