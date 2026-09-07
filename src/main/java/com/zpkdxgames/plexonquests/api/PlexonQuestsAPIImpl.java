@@ -123,6 +123,7 @@ public final class PlexonQuestsAPIImpl implements PlexonQuestsAPI {
                         external.unique(),
                         "",
                         "",
+                        external.metadata(),
                         external.sourceToken());
                 return progress.contributeAsync(player, contribution);
             }

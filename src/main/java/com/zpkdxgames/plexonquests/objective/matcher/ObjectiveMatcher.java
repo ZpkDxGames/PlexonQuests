@@ -87,6 +87,9 @@ public final class ObjectiveMatcher {
                 && !filters.advancementKeys().contains(contribution.advancementKey())) {
             return 0L;
         }
+        if (!IntegrationObjectiveFilters.matches(objective.type(), filters.extras(), contribution.metadata())) {
+            return 0L;
+        }
         for (String permission : filters.requiredPermissions()) {
             if (!player.hasPermission(permission)) {
                 return 0L;

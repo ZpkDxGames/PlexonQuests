@@ -151,10 +151,14 @@ public final class ConfigManager {
 
         List<String> activationErrors = new ArrayList<>();
         validateMenus(menus, activationErrors);
+        MiniMessageValidator.validateYaml("messages.yml", messages, activationErrors);
+        MiniMessageValidator.validateYaml("menus.yml", menus, activationErrors);
+        MiniMessageValidator.validateYaml("effects.yml", effects, activationErrors);
         QuestRegistrySnapshot registry = new DefinitionLoader(
                         dataDirectory, settings.rotation().recentHistoryExclusion())
                 .load();
         registry = withPoolCapacityWarnings(registry, settings);
+        MiniMessageValidator.validateRegistry(registry, activationErrors);
         if (registry.quests().isEmpty()) {
             activationErrors.add("No valid quests were loaded");
         }

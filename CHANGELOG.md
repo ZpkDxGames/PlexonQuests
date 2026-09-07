@@ -4,6 +4,17 @@ All notable changes to PlexonQuests are documented here.
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-09-06
+
+- Added first-party integration adapters with verified PlexonRanks, PlexonCrates, and PlexonDailyRewards event conversion, durable source tokens, and immediate rank-slot refresh.
+- Added immutable contribution metadata and metadata-aware filters for ranks, tools, keys, crates, shops, and daily rewards.
+- Added strict validation for unsupported integration filters; filtered objectives fail closed when required metadata is absent.
+- Added SAFE, LEGACY, and whitelisted MINIMESSAGE PlaceholderAPI rendering modes while preserving literal insertion for untrusted runtime values.
+- Added MiniMessage candidate validation before atomic configuration activation.
+- Updated diagnostics to surface provider/API detail and corrected PlexonCrates public event discovery.
+- Preserved the indexed objective pipeline, durable contribution-token reservation, SQLite/WAL persistence, and guarded reserve/deliver/commit rewards.
+- Added 3.0 integration/filter/API regression tests and updated build artifacts to PlexonQuests-3.0.0.
+
 ## [2.0.1] - 2026-09-05
 
 - Expanded the bundled catalog to 15 daily quests, 12 weekly quests, and 6 retroactive milestones, with enough dependency-free variety to fill every configured slot.

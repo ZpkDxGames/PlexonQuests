@@ -84,6 +84,13 @@ integrations:
   plexonshops: AUTO
   plexondailyrewards: AUTO
 
+text:
+  placeholder-rendering:
+    # SAFE inserts PlaceholderAPI output as literal text. LEGACY and MINIMESSAGE are opt-in trusted modes.
+    default: SAFE
+    allow-legacy: true
+    allow-minimessage: true
+
 feedback:
   join-reminder-delay: 40t
   failure-message-cooldown: 2s

@@ -493,7 +493,9 @@ public final class QuestCommand implements CommandExecutor, TabCompleter {
                 .forEach(integration -> sender.sendMessage(text.parse(
                         "<gray>" + integration.id() + " <white>" + integration.status()
                                 + (integration.detectedVersion().isBlank()
-                                        ? "" : " <dark_gray>v" + integration.detectedVersion()))));
+                                        ? "" : " <dark_gray>v" + integration.detectedVersion())
+                                + (integration.detail().isBlank()
+                                        ? "" : " <dark_gray>• <gray>" + integration.detail()))));
         return true;
     }
 
