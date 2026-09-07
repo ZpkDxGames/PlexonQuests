@@ -4,6 +4,17 @@ All notable changes to PlexonQuests are documented here.
 
 ## [Unreleased]
 
+## [3.1.0] - 2026-09-07
+
+- Added PlexonCore 1.x module registration for module `quests`, including `STARTING`, `READY`, `DEGRADED`, and `FAILED` lifecycle reporting and safe unregister on shutdown.
+- Added an isolated optional Core bridge so compatible PlexonCore 1.x enables Core mode while a missing, disabled, unavailable, or incompatible Core safely falls back to standalone compatibility mode where possible.
+- Added Core-aware provider discovery hints without replacing PlexonQuests' quest-specific integration adapters or their exact event/API contract validation.
+- Added live `PLEXON_CORE` diagnostics showing Core plugin/API version, supported API range, module registration state, and `CORE`/`STANDALONE` mode.
+- Preserved PlexonQuests-owned SQLite/WAL storage, rotations, assignments, rewards, GUI engine, PlaceholderAPI expansion, configuration system, public API, player data, natural-block tracking, and integration event semantics.
+- Updated the build and tag-driven release workflows to compile against the exact PlexonCore 1.0.0 release as a Maven `provided` dependency and reject artifacts that shade a second Core runtime tree.
+- Added automated Core lifecycle/compatibility/duplicate-registration coverage plus single-contribution regression tests for PlexonRanks rankup, PlexonCrates crate-open, and PlexonDailyRewards claim events.
+- Updated operational documentation for Core mode, standalone mode, live upgrade, rollback, staging, diagnostics, and performance verification.
+
 ## [3.0.0] - 2026-09-06
 
 - Added first-party integration adapters with verified PlexonRanks, PlexonCrates, and PlexonDailyRewards event conversion, durable source tokens, and immediate rank-slot refresh.
