@@ -1,6 +1,7 @@
 package com.zpkdxgames.plexonquests.integration;
 
 import com.zpkdxgames.plexonquests.config.ConfigManager;
+import com.zpkdxgames.plexonquests.integration.core.CoreBridge;
 import com.zpkdxgames.plexonquests.objective.Contribution;
 import com.zpkdxgames.plexonquests.objective.ObjectiveType;
 import com.zpkdxgames.plexonquests.rotation.RotationService;
@@ -29,11 +30,17 @@ public final class IntegrationManager {
     private static final Map<String, Descriptor> DESCRIPTORS = descriptors();
 
     private final JavaPlugin plugin;
+    private final CoreBridge core;
     private volatile Map<String, IntegrationState> states = Map.of();
     private final Listener bridgeListener = new Listener() {};
 
-    public IntegrationManager(JavaPlugin plugin) {
+    public IntegrationManager(JavaPlugin plugin, CoreBridge core) {
         this.plugin = plugin;
+        this.core = core;
+    }
+
+    public CoreBridge core() {
+        return core;
     }
 
     public void detect() {
@@ -141,6 +148,19 @@ public final class IntegrationManager {
     }
 
     private IntegrationState inspect(String id, Descriptor descriptor) {
+        CoreBridge.ProviderHint hint = core.providerHint(id);
+        if (hint == CoreBridge.ProviderHint.MISSING) {
+            return new IntegrationState(
+                    id, descriptor.pluginName(), IntegrationStatus.MISSING, "", "PlexonCore reports plugin is not installed");
+        }
+        if (hint == CoreBridge.ProviderHint.DISABLED) {
+            Plugin disabled = Bukkit.getPluginManager().getPlugin(descriptor.pluginName());
+            String version = disabled == null ? "" : disabled.getPluginMeta().getVersion();
+            return new IntegrationState(
+                    id, descriptor.pluginName(), IntegrationStatus.DISABLED, version,
+                    "PlexonCore reports plugin is installed but disabled");
+        }
+
         Plugin provider = Bukkit.getPluginManager().getPlugin(descriptor.pluginName());
         if (provider == null) {
             return new IntegrationState(id, descriptor.pluginName(), IntegrationStatus.MISSING, "", "Plugin is not installed");
@@ -201,4 +221,3 @@ public final class IntegrationManager {
 
     private record Descriptor(String pluginName, Set<String> requiredClasses) {}
 }
-
