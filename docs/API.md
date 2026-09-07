@@ -2,6 +2,8 @@
 
 PlexonQuests registers `PlexonQuestsAPI` with Bukkit's `ServicesManager`. Add PlexonQuests as a compile-time `provided` dependency in the consuming plugin and declare `softdepend: [PlexonQuests]` when the integration is optional.
 
+PlexonQuests 3.1.0 keeps this API independently registered in both Core and standalone modes. Consumers do **not** need to access PlexonQuests through PlexonCore, and no public Quests API break is required by the Core migration.
+
 ## Obtaining the service
 
 ```java
@@ -16,6 +18,14 @@ PlexonQuestsAPI quests = registration.getProvider();
 
 The service is unregistered during disable, including partial-startup failure. Do not retain it after `PluginDisableEvent`.
 
+## PlexonCore relationship in 3.1.0
+
+When compatible PlexonCore 1.x is installed, PlexonQuests registers module `quests` with Core API range `>=1.0 <2.0`. Core provides shared module/ecosystem visibility; the Quests API remains the domain API for quest operations.
+
+`integrationStates()` preserves the existing deep PlexonQuests provider states and additionally exposes `PLEXON_CORE`. That Core entry reports the installed Core version, API version, supported range, module registration state, and `CORE`/`STANDALONE` mode. The simpler Core provider registry does not replace Quests' exact integration-contract state.
+
+PlexonCore absence does not remove `PlexonQuestsAPI`. If Quests starts successfully in standalone mode, the service is registered normally.
+
 ## Threading and data ownership
 
 - Player-state operations return `CompletableFuture` and marshal themselves to the primary server thread.
@@ -24,6 +34,7 @@ The service is unregistered during disable, including partial-startup failure. D
 - Definition lookup and integration-state maps are read-only snapshots.
 - Manual assignment and journal opening currently require the target player to be online.
 - Do not block the primary thread with `future.join()` or `get()`.
+- Core adoption does not move player profiles, assignments, rewards, persistence, or quest-specific integration state into PlexonCore.
 
 ## Operations
 
@@ -37,7 +48,7 @@ The service is unregistered during disable, including partial-startup failure. D
 | `isComplete` / `isClaimable` | Query assignment state |
 | `pin` / `unpin` | Change the player's pin |
 | `openJournal(UUID, String)` | Open `all`, `daily`, `weekly`, or `milestone` journal scope |
-| `integrationStates()` | Read detected optional integration states and details |
+| `integrationStates()` | Read detected optional integration states and details, including `PLEXON_CORE` in 3.1.0 |
 
 ## External progress
 
@@ -61,6 +72,8 @@ When the source system has a stable transaction/event ID, pass it as `sourceToke
 
 The `unique` flag is available to objective filters; it is not a substitute for a source token.
 
+PlexonCore provider discovery does not change these semantics. Core availability is never treated as proof that a provider exposes the exact quest event/API contract.
+
 ## Bukkit events
 
 All events are synchronous and expose identifiers rather than mutable internal assignment objects.
@@ -82,7 +95,7 @@ Handlers must remain fast. Do not perform network or database work in the event 
 
 ## PlaceholderAPI
 
-The expansion identifier is `plexonquests` and persists through PlaceholderAPI reloads.
+The expansion identifier is `plexonquests` and persists through PlaceholderAPI reloads. Core mode does not register a second expansion; `%plexonquests_*%` remains owned by PlexonQuests.
 
 | Placeholder | Value |
 | --- | --- |
