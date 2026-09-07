@@ -8,6 +8,8 @@ import com.zpkdxgames.plexonquests.gui.MenuListener;
 import com.zpkdxgames.plexonquests.gui.MenuService;
 import com.zpkdxgames.plexonquests.integration.IntegrationManager;
 import com.zpkdxgames.plexonquests.integration.PlexonQuestsExpansion;
+import com.zpkdxgames.plexonquests.integration.core.CoreBridge;
+import com.zpkdxgames.plexonquests.integration.core.CoreBridgeFactory;
 import com.zpkdxgames.plexonquests.objective.tracker.ActivitySampler;
 import com.zpkdxgames.plexonquests.objective.tracker.CoreObjectiveListener;
 import com.zpkdxgames.plexonquests.persistence.StorageService;
@@ -51,11 +53,15 @@ public class PlexonQuestsPlugin extends JavaPlugin {
     private EffectService effects;
     private ActivitySampler activity;
     private PlexonQuestsExpansion expansion;
+    private CoreBridge core;
     private boolean started;
 
     @Override
     public void onEnable() {
         try {
+            core = CoreBridgeFactory.resolve(this);
+            core.registerStarting();
+
             configExecutor = Executors.newSingleThreadExecutor(runnable -> {
                 Thread thread = new Thread(runnable, "PlexonQuests-Config");
                 thread.setDaemon(true);
@@ -64,7 +70,7 @@ public class PlexonQuestsPlugin extends JavaPlugin {
             configs = new ConfigManager(this);
             var initial = configs.loadInitial();
 
-            integrations = new IntegrationManager(this);
+            integrations = new IntegrationManager(this, core);
             integrations.detect();
             storage = new StorageService(configs.dataDirectory(), initial.settings().storage(), getLogger());
             storage.start();
@@ -97,11 +103,16 @@ public class PlexonQuestsPlugin extends JavaPlugin {
             scheduleMaintenance();
             Bukkit.getOnlinePlayers().forEach(profiles::load);
             started = true;
+            core.markReady("Quest engine ready; definitions loaded successfully");
 
             getLogger().info("PlexonQuests " + getPluginMeta().getVersion() + " enabled with "
                     + initial.registry().quests().size() + " quests, " + initial.registry().pools().size()
-                    + " pools, and " + initial.registry().errorCount() + " quarantined definition error(s).");
+                    + " pools, and " + initial.registry().errorCount() + " quarantined definition error(s). Core mode: "
+                    + core.mode() + ".");
         } catch (Exception exception) {
+            if (core != null) {
+                core.markFailed("Quest startup failed: " + exception.getClass().getSimpleName());
+            }
             getLogger().log(Level.SEVERE, "PlexonQuests could not start safely; disabling without partial operation", exception);
             shutdown();
             Bukkit.getPluginManager().disablePlugin(this);
@@ -250,6 +261,9 @@ public class PlexonQuestsPlugin extends JavaPlugin {
                 Thread.currentThread().interrupt();
             }
             configExecutor = null;
+        }
+        if (core != null) {
+            core.unregister();
         }
         Bukkit.getServicesManager().unregisterAll(this);
         if (started) {
