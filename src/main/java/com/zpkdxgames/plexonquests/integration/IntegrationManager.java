@@ -46,7 +46,11 @@ public final class IntegrationManager {
     public void detect() {
         Map<String, IntegrationState> detected = new LinkedHashMap<>();
         DESCRIPTORS.forEach((id, descriptor) -> detected.put(id, inspect(id, descriptor)));
+        detected.put("PLEXON_CORE", coreState());
         states = Map.copyOf(detected);
+        if ("READY".equals(core.registrationState()) || "DEGRADED".equals(core.registrationState())) {
+            core.markReady("Quest engine ready; integration compatibility refreshed");
+        }
     }
 
     public boolean available(String id) {
@@ -188,6 +192,24 @@ public final class IntegrationManager {
                 IntegrationStatus.AVAILABLE,
                 provider.getPluginMeta().getVersion(),
                 "Ready");
+    }
+
+    private IntegrationState coreState() {
+        IntegrationStatus status;
+        if (!core.installed()) {
+            status = IntegrationStatus.MISSING;
+        } else if (!core.compatible() && !"-".equals(core.apiVersion())) {
+            status = IntegrationStatus.INCOMPATIBLE;
+        } else if (!core.available()) {
+            status = IntegrationStatus.UNAVAILABLE_MISSING_API;
+        } else {
+            status = IntegrationStatus.AVAILABLE;
+        }
+        String detail = "API " + core.apiVersion()
+                + " | supported " + CoreBridge.SUPPORTED_API_RANGE
+                + " | module " + CoreBridge.MODULE_ID + " " + core.registrationState()
+                + " | mode " + core.mode();
+        return new IntegrationState("PLEXON_CORE", "PlexonCore", status, core.pluginVersion(), detail);
     }
 
     private static String normalize(String id) {
