@@ -2,6 +2,8 @@
 
 PlexonQuests is designed around bounded in-memory matching and asynchronous persistence. Performance claims should be based on measurements from the target server stack; no document can substitute for a live Paper profile.
 
+PlexonCore adoption in 3.1.0 is lifecycle/cached infrastructure. It must not introduce Core lookups into the gameplay hot path.
+
 ## Hot-path model
 
 - Active objective handles are indexed per player by objective type, then by material or entity type where possible.
@@ -11,6 +13,9 @@ PlexonQuests is designed around bounded in-memory matching and asynchronous pers
 - Natural-block origin checks use chunk-local encoded positions. No database query occurs per block break/place.
 - Travel/playtime are sampled, and bossbar/actionbar updates are throttled.
 - Source-token calls perform an intentional asynchronous database reservation because cross-restart idempotency is more important than accepting duplicate external transactions.
+- PlexonCore API/module references are resolved during plugin lifecycle initialization rather than per event.
+- Core provider discovery is refreshed during integration detection/reload, not per contribution or per objective.
+- Gameplay events do not perform per-event Bukkit `ServicesManager` lookups, Core module-registry scans, or Core integration-registry scans.
 
 ## Bounds and controls
 
@@ -24,6 +29,7 @@ PlexonQuests is designed around bounded in-memory matching and asynchronous pers
 | Contribution tokens | SHA-256 only, 30-day retention |
 | External in-memory token cache | 2,048 entries per online player, one-hour window |
 | GUI/menu size | 9–54 slots, validated |
+| Core module state | lifecycle/event-driven updates; no periodic per-tick publication |
 
 Increasing a bound trades memory or shutdown work for capacity. Avoid treating a larger queue as a fix for persistent disk latency.
 
@@ -31,11 +37,13 @@ Increasing a bound trades memory or shutdown work for capacity. Avoid treating a
 
 Record all of the following with each result:
 
-- exact Paper build, Java build/flags, CPU, memory, storage type, OS, and plugin commit;
+- exact Paper build, Java build/flags, CPU, memory, storage type, OS, PlexonQuests commit, and PlexonCore version/state;
 - complete plugin list and relevant configuration changes;
 - player/bot count, active assignments/objectives per player, world/chunk pattern, and event rate;
 - warm-up duration, measured duration, sample count, median, p95, p99, and worst tick/MSPT;
 - profiler link or exported report and the comparable no-PlexonQuests/control run.
+
+For 3.1.0, run representative scenarios with compatible PlexonCore present and with Core absent. Quest outcomes should remain equivalent, and Core mode must not add a meaningful sustained tick-cost regression.
 
 Recommended scenarios:
 
@@ -45,6 +53,8 @@ Recommended scenarios:
 4. Claim bursts with items, XP, economy, permissions, commands, full inventory, and provider failure.
 5. Maximum bounded registry/history and repeated chunk origin load/unload.
 6. Slow-disk injection until queue pressure is visible, followed by clean shutdown.
+7. Repeated supported PlexonRanks, PlexonCrates, and PlexonDailyRewards provider events while Core is present, verifying no duplicated listener/contribution cost.
+8. `/quests reload` and `/plexon reload` during representative staging traffic, confirming no duplicate scheduler, PAPI expansion, GUI listener, or provider listener is created.
 
 Use Paper timings or spark for live MSPT/call-tree evidence and Java Flight Recorder/async-profiler when allocation or lock evidence is needed. Measure the storage volume independently.
 
@@ -54,7 +64,9 @@ Establish the actual budget for the target network before release. A useful star
 
 - no unbounded growth in queue, dirty snapshots, token caches, or origin sets;
 - no SQLite calls in core Bukkit gameplay listener stacks;
+- no per-event Core ServicesManager lookup, module-registry scan, provider rediscovery, or health publication;
 - no new sustained p95 MSPT regression greater than the network's agreed budget under the representative mixed scenario;
+- Core-present and Core-absent runs produce equivalent quest progression semantics;
 - rotation and claim bursts drain without queue rejection;
 - shutdown completes within `storage.shutdown-timeout` on healthy storage.
 
