@@ -18,6 +18,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 /** Core 2-only adapter. This class must never be loaded on Core 1.x or standalone paths. */
 public final class PlexonCore2Runtime implements CoreRuntime {
     private final PlexonCoreAPI core;
+    private final boolean originImportAvailable;
 
     public PlexonCore2Runtime(JavaPlugin plugin) {
         RegisteredServiceProvider<PlexonCoreAPI> registration =
@@ -29,6 +30,25 @@ public final class PlexonCore2Runtime implements CoreRuntime {
         if (core.version().apiMajor() < 2) {
             throw new IllegalStateException("PlexonCore Runtime requires API 2.x");
         }
+        this.originImportAvailable = detectOriginImportApi();
+    }
+
+    private static boolean detectOriginImportApi() {
+        try {
+            BlockOriginService.class.getMethod(
+                    "importComplete", UUID.class, int.class, int.class, String.class, int.class);
+            BlockOriginService.class.getMethod(
+                    "importPlayerPlacedChunk",
+                    UUID.class,
+                    int.class,
+                    int.class,
+                    String.class,
+                    int.class,
+                    Collection.class);
+            return true;
+        } catch (ReflectiveOperationException | LinkageError unavailable) {
+            return false;
+        }
     }
 
     @Override
@@ -38,7 +58,8 @@ public final class PlexonCore2Runtime implements CoreRuntime {
 
     @Override
     public String detail() {
-        return "PlexonCore " + core.version().pluginVersion() + " Runtime API " + core.version().apiVersion();
+        return "PlexonCore " + core.version().pluginVersion() + " Runtime API " + core.version().apiVersion()
+                + (originImportAvailable ? " + origin import" : " + legacy origin fallback");
     }
 
     @Override
@@ -81,17 +102,15 @@ public final class PlexonCore2Runtime implements CoreRuntime {
 
     @Override
     public boolean originImportAvailable() {
-        try {
-            core.blockOrigins().stats();
-            return true;
-        } catch (LinkageError | RuntimeException unavailable) {
-            return false;
-        }
+        return originImportAvailable;
     }
 
     @Override
     public CompletableFuture<Boolean> originImportComplete(
             UUID worldId, int chunkX, int chunkZ, String source, int sourceVersion) {
+        if (!originImportAvailable) {
+            return CoreRuntime.super.originImportComplete(worldId, chunkX, chunkZ, source, sourceVersion);
+        }
         return core.blockOrigins().importComplete(worldId, chunkX, chunkZ, source, sourceVersion);
     }
 
@@ -103,6 +122,10 @@ public final class PlexonCore2Runtime implements CoreRuntime {
             String source,
             int sourceVersion,
             Collection<BlockPosition> positions) {
+        if (!originImportAvailable) {
+            return CoreRuntime.super.importPlayerPlacedChunk(
+                    worldId, chunkX, chunkZ, source, sourceVersion, positions);
+        }
         var converted = positions.stream()
                 .map(position -> new BlockOriginService.BlockPosition(position.x(), position.y(), position.z()))
                 .toList();
