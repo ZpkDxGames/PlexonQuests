@@ -13,8 +13,8 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
-import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.configuration.file.YamlConfiguration;
+import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 
 /**
@@ -58,8 +58,14 @@ public final class CoreRuntimeCoordinator implements AutoCloseable {
 
     private void rebuild(boolean initial) {
         ConfigSnapshot snapshot = configs.snapshot();
-        Mode mode = readMode();
-        if (!initial && snapshot == subscriptionSnapshot && mode == requestedMode) {
+        Mode configuredMode = readMode();
+        Mode mode = configuredMode;
+        if (!initial && configuredMode != requestedMode) {
+            plugin.getLogger().warning("core-runtime.mode changed from " + requestedMode + " to " + configuredMode
+                    + "; runtime authority changes require a server restart, so the current mode is retained");
+            mode = requestedMode;
+        }
+        if (!initial && snapshot == subscriptionSnapshot) {
             return;
         }
 
@@ -67,8 +73,16 @@ public final class CoreRuntimeCoordinator implements AutoCloseable {
             throw new IllegalStateException("core-runtime.mode=CORE but PlexonCore 2 Runtime API is unavailable");
         }
 
-        boolean nextActive = mode != Mode.LOCAL && core.runtimeAvailable();
         Plan plan = buildPlan(snapshot);
+        if (mode == Mode.CORE
+                && plan.requiresOrigin()
+                && core.runtimeAvailable()
+                && !core.runtime().originImportAvailable()) {
+            throw new IllegalStateException(
+                    "core-runtime.mode=CORE requires PlexonCore origin import support for natural/player-placed quest filters");
+        }
+
+        boolean nextActive = mode != Mode.LOCAL && core.runtimeAvailable();
         CoreRuntime.Subscription candidate = null;
         if (nextActive && !plan.materials().isEmpty()) {
             candidate = core.runtime().subscribeBlockBreak(
@@ -87,7 +101,8 @@ public final class CoreRuntimeCoordinator implements AutoCloseable {
 
         plugin.getLogger().info("PlexonQuests block acquisition mode: " + acquisitionMode()
                 + "; Core routes=" + subscribedMaterials
-                + "; origin requested=" + originRequested + '.');
+                + "; origin requested=" + originRequested
+                + "; origin authority=" + (coreOriginAuthoritative() ? "CORE" : "LOCAL") + '.');
     }
 
     private void receive(CoreRuntime.BlockFact fact) {
@@ -102,7 +117,7 @@ public final class CoreRuntimeCoordinator implements AutoCloseable {
 
     /**
      * Consume the Core fact matching this exact Bukkit event. The local MONITOR listener still owns
-     * final cancellation correctness because Core 2.0 currently acquires its immutable fact at HIGHEST.
+     * final cancellation correctness because Core 2 currently acquires its immutable fact at HIGHEST.
      */
     public CoreRuntime.BlockFact consume(BlockBreakEvent event) {
         if (!active) {
@@ -143,8 +158,12 @@ public final class CoreRuntimeCoordinator implements AutoCloseable {
         return active;
     }
 
+    /**
+     * Core origin becomes authoritative only when Core supports persisted legacy-import markers.
+     * Older Core 2 builds may still provide event acquisition while Quests keeps local provenance.
+     */
     public boolean coreOriginAuthoritative() {
-        return active;
+        return active && core.runtime().originImportAvailable();
     }
 
     public String acquisitionMode() {
