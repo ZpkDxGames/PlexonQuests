@@ -1,0 +1,103 @@
+name: Publish PlexonQuests 3.3.0
+
+on:
+  push:
+    branches: [release/3.3.0-publish]
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Checkout merged 3.3.0 source
+        run: git checkout 353a6d343180c48e305033d82cedd4a191c297b2
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+      - name: Provision PlexonCore 2.0.2 API
+        shell: bash
+        run: |
+          set -euo pipefail
+          core_jar="${RUNNER_TEMP}/PlexonCore-2.0.2.jar"
+          curl --fail --location --silent --show-error \
+            --output "${core_jar}" \
+            "https://github.com/ZpkDxGames/PlexonCore/releases/download/v2.0.2/PlexonCore-2.0.2.jar"
+          echo "7e096ada4293017203cd4e01cb93761d169fa4c756fc46af520b2aed11a10ef5  ${core_jar}" | sha256sum --check
+          mvn -B -ntp org.apache.maven.plugins:maven-install-plugin:3.1.4:install-file \
+            -Dfile="${core_jar}" \
+            -DgroupId=com.zpkdxgames \
+            -DartifactId=PlexonCore \
+            -Dversion=2.0.2 \
+            -Dpackaging=jar \
+            -DgeneratePom=true
+      - name: Verify exact merged source
+        run: mvn -B -ntp clean verify
+      - name: Verify distribution
+        shell: bash
+        run: |
+          set -euo pipefail
+          jar_path="target/PlexonQuests-3.3.0.jar"
+          test -s "${jar_path}"
+          jar tf "${jar_path}" > target/jar-contents.txt
+          grep -qx 'plugin.yml' target/jar-contents.txt
+          grep -qx 'org/sqlite/JDBC.class' target/jar-contents.txt
+          grep -q '^com/zpkdxgames/plexonquests/integration/core/PlexonCore2Runtime.class$' target/jar-contents.txt
+          if grep -q '^com/zpkdxgames/plexoncore/' target/jar-contents.txt; then
+            echo "PlexonCore runtime classes must not be shaded into PlexonQuests" >&2
+            exit 1
+          fi
+      - name: Generate checksum
+        working-directory: target
+        run: |
+          sha256sum PlexonQuests-3.3.0.jar > SHA256SUMS.txt
+          sha256sum --check SHA256SUMS.txt
+      - name: Prepare release notes
+        shell: bash
+        run: |
+          cat > target/release-notes.md <<'EOF'
+          # PlexonQuests 3.3.0
+
+          Stable Core Runtime/shared-origin migration release for Paper 26.2 / Java 25.
+
+          Built and verified from merged commit `353a6d343180c48e305033d82cedd4a191c297b2` against the exact stable PlexonCore 2.0.2 JAR.
+
+          ## PlexonCore 2.0.2 compatibility
+          - final block callbacks are consumed at MONITOR
+          - finally-cancelled breaks are suppressed by Core and defensively checked again by PlexonQuests
+          - event-time origin is captured before Core provenance cleanup
+          - idempotent shared-origin import markers are preserved
+          - PlexonCore remains a provided dependency and is not shaded into PlexonQuests
+
+          ## Runtime
+          - `AUTO`, `CORE`, `LOCAL`, and `SHADOW` modes
+          - lazy legacy provenance import into Core
+          - fail-closed UNKNOWN semantics
+          - expanded `/quests diagnostics`
+          - local block-place and non-block quest handlers retained where Core does not own the event
+
+          ## Verification
+          - Java 25 Maven verify
+          - unit/MockBukkit regression suite
+          - Core 1 legacy and Core 2.0.2 runtime activation tests
+          - distribution/JAR structure verification
+          - SHA-256 verification
+          - no-Core-shading check
+
+          Recommended runtime: PlexonCore 2.0.2 + PlexonQuests 3.3.0.
+          EOF
+      - name: Publish stable release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create v3.3.0 \
+            target/PlexonQuests-3.3.0.jar \
+            target/SHA256SUMS.txt \
+            --target 353a6d343180c48e305033d82cedd4a191c297b2 \
+            --title "PlexonQuests 3.3.0" \
+            --notes-file target/release-notes.md \
+            --latest
