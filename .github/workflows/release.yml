@@ -3,6 +3,7 @@ name: Release
 on:
   push:
     tags: ['v*']
+    branches: ['release/**']
 
 permissions:
   contents: write
@@ -17,6 +18,10 @@ jobs:
           distribution: temurin
           java-version: '25'
           cache: maven
+      - name: Read project version
+        id: project
+        shell: bash
+        run: echo "version=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)" >> "$GITHUB_OUTPUT"
       - name: Provision PlexonCore 1.0.0 API
         shell: bash
         run: |
@@ -38,7 +43,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          jar tf target/PlexonQuests-3.1.0.jar > target/jar-contents.txt
+          jar_path="target/PlexonQuests-${{ steps.project.outputs.version }}.jar"
+          test -f "${jar_path}"
+          jar tf "${jar_path}" > target/jar-contents.txt
           grep -qx 'plugin.yml' target/jar-contents.txt
           grep -qx 'org/sqlite/JDBC.class' target/jar-contents.txt
           if grep -q '^com/zpkdxgames/plexoncore/' target/jar-contents.txt; then
@@ -50,6 +57,9 @@ jobs:
         run: sha256sum PlexonQuests-*.jar > SHA256SUMS.txt
       - uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('v{0}', steps.project.outputs.version) }}
+          target_commitish: ${{ startsWith(github.ref, 'refs/tags/') && github.sha || 'main' }}
+          name: PlexonQuests ${{ steps.project.outputs.version }}
           generate_release_notes: true
           files: |
             target/PlexonQuests-*.jar
