@@ -39,7 +39,7 @@
     <project.build.outputTimestamp>2026-09-09T00:00:00Z</project.build.outputTimestamp>
     <maven.compiler.release>25</maven.compiler.release>
     <paper.version>26.2.build.121-stable</paper.version>
-    <plexoncore.version>2.0.1</plexoncore.version>
+    <plexoncore.version>2.0.2</plexoncore.version>
     <placeholderapi.version>2.12.1</placeholderapi.version>
     <sqlite.version>3.53.4.0</sqlite.version>
     <fastutil.version>8.5.16</fastutil.version>
