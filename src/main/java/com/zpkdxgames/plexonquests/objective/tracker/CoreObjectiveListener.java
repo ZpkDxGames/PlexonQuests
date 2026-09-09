@@ -1,5 +1,7 @@
 package com.zpkdxgames.plexonquests.objective.tracker;
 
+import com.zpkdxgames.plexonquests.config.ConfigManager;
+import com.zpkdxgames.plexonquests.config.ConfigSnapshot;
 import com.zpkdxgames.plexonquests.objective.Contribution;
 import com.zpkdxgames.plexonquests.objective.ObjectiveType;
 import com.zpkdxgames.plexonquests.service.BlockOriginService;
@@ -40,12 +42,25 @@ import org.bukkit.projectiles.ProjectileSource;
 public final class CoreObjectiveListener implements Listener {
     private final ProgressService progress;
     private final BlockOriginService origins;
+    private final ConfigManager configs;
     private final NamespacedKey spawnReasonKey;
+    private volatile ConfigSnapshot spawnReasonSnapshot;
+    private volatile boolean spawnReasonTracking = true;
 
-    public CoreObjectiveListener(JavaPlugin plugin, ProgressService progress, BlockOriginService origins) {
+    public CoreObjectiveListener(
+            JavaPlugin plugin,
+            ProgressService progress,
+            BlockOriginService origins,
+            ConfigManager configs) {
         this.progress = progress;
         this.origins = origins;
+        this.configs = configs;
         this.spawnReasonKey = new NamespacedKey(plugin, "spawn_reason");
+    }
+
+    /** Compatibility constructor retained for isolated listener tests. */
+    public CoreObjectiveListener(JavaPlugin plugin, ProgressService progress, BlockOriginService origins) {
+        this(plugin, progress, origins, null);
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -115,6 +130,9 @@ public final class CoreObjectiveListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onSpawn(CreatureSpawnEvent event) {
+        if (!spawnReasonTrackingRequired()) {
+            return;
+        }
         event.getEntity().getPersistentDataContainer().set(
                 spawnReasonKey, PersistentDataType.STRING, event.getSpawnReason().name());
     }
@@ -308,6 +326,22 @@ public final class CoreObjectiveListener implements Listener {
                 "",
                 event.getAdvancement().getKey().toString().toLowerCase(Locale.ROOT),
                 ""));
+    }
+
+    private boolean spawnReasonTrackingRequired() {
+        if (configs == null) {
+            return true;
+        }
+        ConfigSnapshot snapshot = configs.snapshot();
+        if (snapshot != spawnReasonSnapshot) {
+            boolean required = snapshot.registry().quests().values().stream()
+                    .filter(quest -> quest.enabled())
+                    .flatMap(quest -> quest.objectives().values().stream())
+                    .anyMatch(objective -> !objective.filters().spawnReasons().isEmpty());
+            spawnReasonTracking = required;
+            spawnReasonSnapshot = snapshot;
+        }
+        return spawnReasonTracking;
     }
 
     private static Contribution blockContribution(
