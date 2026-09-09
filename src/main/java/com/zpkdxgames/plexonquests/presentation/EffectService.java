@@ -51,32 +51,43 @@ public final class EffectService implements ProgressObserver, AutoCloseable {
         if (profile == null) {
             return;
         }
-        QuestAssignment.ProgressSummary progress = assignment.displayProgress();
-        double percentage = progress.percentage();
-        Map<String, String> values = text.placeholders(
-                "current", text.formatNumber(progress.current()),
-                "required", text.formatNumber(progress.required()),
-                "percentage", Integer.toString((int) Math.floor(percentage)),
-                "progress_color", text.progressColor(percentage),
-                "objective", result.objectiveId());
-        Map<String, Component> components = Map.of(
-                "quest_name", text.parse(assignment.definition().display().name()),
-                "progress_bar", text.progressBar(percentage));
+
         long now = System.nanoTime();
         DisplayState state = displays.computeIfAbsent(player.getUniqueId(), ignored -> new DisplayState());
-        long actionbarNanos = configs.snapshot().settings().tracking().actionbarThrottleTicks() * 50_000_000L;
-        if (profile.preferences().enabled(FeedbackChannel.ACTIONBAR)
-                && now - state.lastActionbarNanos >= actionbarNanos) {
-            String template = effectValue("quest-progress", "actionbar", "<gray><quest_name> <progress_bar>");
-            player.sendActionBar(text.parse(player, template, values, components));
-            state.lastActionbarNanos = now;
+        var tracking = configs.snapshot().settings().tracking();
+        long actionbarNanos = tracking.actionbarThrottleTicks() * 50_000_000L;
+        long bossbarNanos = tracking.bossbarThrottleTicks() * 50_000_000L;
+        boolean actionbarDue = profile.preferences().enabled(FeedbackChannel.ACTIONBAR)
+                && now - state.lastActionbarNanos >= actionbarNanos;
+        boolean bossbarDue = profile.preferences().enabled(FeedbackChannel.BOSSBAR)
+                && now - state.lastBossbarNanos >= bossbarNanos;
+
+        // Rendering is intentionally lazy. Rapid progression coalesces into the next due display
+        // instead of rebuilding MiniMessage components and progress bars on every block/event.
+        if (actionbarDue || bossbarDue) {
+            QuestAssignment.ProgressSummary progress = assignment.displayProgress();
+            double percentage = progress.percentage();
+            Map<String, String> values = text.placeholders(
+                    "current", text.formatNumber(progress.current()),
+                    "required", text.formatNumber(progress.required()),
+                    "percentage", Integer.toString((int) Math.floor(percentage)),
+                    "progress_color", text.progressColor(percentage),
+                    "objective", result.objectiveId());
+            Map<String, Component> components = Map.of(
+                    "quest_name", text.parse(assignment.definition().display().name()),
+                    "progress_bar", text.progressBar(percentage));
+
+            if (actionbarDue) {
+                String template = effectValue("quest-progress", "actionbar", "<gray><quest_name> <progress_bar>");
+                player.sendActionBar(text.parse(player, template, values, components));
+                state.lastActionbarNanos = now;
+            }
+            if (bossbarDue) {
+                showProgressBossBar(player, state, assignment, percentage, values, components);
+                state.lastBossbarNanos = now;
+            }
         }
-        long bossbarNanos = configs.snapshot().settings().tracking().bossbarThrottleTicks() * 50_000_000L;
-        if (profile.preferences().enabled(FeedbackChannel.BOSSBAR)
-                && now - state.lastBossbarNanos >= bossbarNanos) {
-            showProgressBossBar(player, state, assignment, percentage, values, components);
-            state.lastBossbarNanos = now;
-        }
+
         if (!result.objectiveCompleted() && crossedThreshold(assignment, result)) {
             playConfiguredSound(player, profile, "quest-objective-complete", FeedbackChannel.PROGRESS_SOUNDS);
         }
@@ -281,6 +292,7 @@ public final class EffectService implements ProgressObserver, AutoCloseable {
     public void close() {
         if (cleanupTask != null) {
             cleanupTask.cancel();
+            cleanupTask = null;
         }
         displays.forEach((playerId, state) -> {
             Player player = Bukkit.getPlayer(playerId);

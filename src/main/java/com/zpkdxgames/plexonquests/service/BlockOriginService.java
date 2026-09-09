@@ -2,12 +2,14 @@ package com.zpkdxgames.plexonquests.service;
 
 import com.zpkdxgames.plexonquests.config.BlockOriginMode;
 import com.zpkdxgames.plexonquests.config.ConfigManager;
+import it.unimi.dsi.fastutil.longs.LongIterator;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.List;
+import java.util.Collection;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -34,14 +36,16 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 public final class BlockOriginService implements Listener {
     private static final int FORMAT_VERSION = 1;
+    private static final int MAX_REMOVALS_PER_TICK = 4_096;
 
     private final JavaPlugin plugin;
     private final ConfigManager configs;
     private final NamespacedKey placedKey;
     private final NamespacedKey sessionUnknownKey;
     private final Map<ChunkKey, OriginSet> chunks = new ConcurrentHashMap<>();
-    private final List<BlockPosition> pendingRemovals = new ArrayList<>();
+    private final Map<ChunkKey, LongOpenHashSet> pendingRemovals = new LinkedHashMap<>();
     private final AtomicBoolean removalScheduled = new AtomicBoolean();
+    private int pendingRemovalCount;
 
     public BlockOriginService(JavaPlugin plugin, ConfigManager configs) {
         this.plugin = plugin;
@@ -76,10 +80,22 @@ public final class BlockOriginService implements Listener {
         if (mode() == BlockOriginMode.OFF) {
             return;
         }
-        pendingRemovals.add(BlockPosition.of(block));
-        if (removalScheduled.compareAndSet(false, true)) {
-            Bukkit.getScheduler().runTask(plugin, this::flushPendingRemovals);
+        queueBroken(block);
+        scheduleRemovalFlush();
+    }
+
+    /**
+     * Batch variant for explosions and first-party area-mining integrations. Positions are
+     * deduplicated by chunk and only one removal task is scheduled for the whole batch.
+     */
+    public void markBroken(Collection<? extends Block> blocks) {
+        if (blocks.isEmpty() || mode() == BlockOriginMode.OFF) {
+            return;
         }
+        for (Block block : blocks) {
+            queueBroken(block);
+        }
+        scheduleRemovalFlush();
     }
 
     public int loadedChunkCount() {
@@ -88,6 +104,14 @@ public final class BlockOriginService implements Listener {
 
     public long trackedPositionCount() {
         return chunks.values().stream().mapToLong(set -> set.positions.size()).sum();
+    }
+
+    public int pendingRemovalCount() {
+        return pendingRemovalCount;
+    }
+
+    public int pendingRemovalChunkCount() {
+        return pendingRemovals.size();
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -124,7 +148,7 @@ public final class BlockOriginService implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onExplode(EntityExplodeEvent event) {
-        event.blockList().forEach(this::markBroken);
+        markBroken(event.blockList());
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -145,6 +169,7 @@ public final class BlockOriginService implements Listener {
     @EventHandler(priority = EventPriority.MONITOR)
     public void onChunkUnload(ChunkUnloadEvent event) {
         ChunkKey key = ChunkKey.of(event.getChunk());
+        discardPendingRemovals(key);
         if (mode() == BlockOriginMode.SESSION) {
             chunks.remove(key);
             event.getChunk().getPersistentDataContainer().set(
@@ -253,28 +278,69 @@ public final class BlockOriginService implements Listener {
         destinationSet.dirty = true;
     }
 
+    private void queueBroken(Block block) {
+        ChunkKey key = ChunkKey.of(block.getChunk());
+        LongOpenHashSet positions = pendingRemovals.computeIfAbsent(key, ignored -> new LongOpenHashSet());
+        if (positions.add(pack(block))) {
+            pendingRemovalCount++;
+        }
+    }
+
+    private void scheduleRemovalFlush() {
+        if (pendingRemovalCount > 0 && removalScheduled.compareAndSet(false, true)) {
+            Bukkit.getScheduler().runTask(plugin, this::flushPendingRemovals);
+        }
+    }
+
     private void flushPendingRemovals() {
-        List<BlockPosition> removals = List.copyOf(pendingRemovals);
-        pendingRemovals.clear();
+        int budget = MAX_REMOVALS_PER_TICK;
+        Iterator<Map.Entry<ChunkKey, LongOpenHashSet>> chunksIterator = pendingRemovals.entrySet().iterator();
+        while (budget > 0 && chunksIterator.hasNext()) {
+            Map.Entry<ChunkKey, LongOpenHashSet> entry = chunksIterator.next();
+            ChunkKey key = entry.getKey();
+            LongOpenHashSet removals = entry.getValue();
+            World world = Bukkit.getWorld(key.worldId());
+            OriginSet originSet = chunks.get(key);
+
+            if (world == null || !world.isChunkLoaded(key.x(), key.z()) || originSet == null || !originSet.known) {
+                pendingRemovalCount -= removals.size();
+                chunksIterator.remove();
+                continue;
+            }
+
+            LongIterator positions = removals.iterator();
+            while (budget > 0 && positions.hasNext()) {
+                long packed = positions.nextLong();
+                positions.remove();
+                pendingRemovalCount--;
+                budget--;
+
+                int x = (key.x() << 4) + unpackLocalX(packed);
+                int y = unpackY(packed, world.getMinHeight());
+                int z = (key.z() << 4) + unpackLocalZ(packed);
+                Block current = world.getBlockAt(x, y, z);
+                if (!current.getType().isAir()) {
+                    continue;
+                }
+                if (originSet.positions.remove(packed)) {
+                    originSet.dirty = true;
+                }
+            }
+            if (removals.isEmpty()) {
+                chunksIterator.remove();
+            }
+        }
+
         removalScheduled.set(false);
-        for (BlockPosition position : removals) {
-            World world = Bukkit.getWorld(position.worldId());
-            if (world == null) {
-                continue;
-            }
-            int chunkX = position.x() >> 4;
-            int chunkZ = position.z() >> 4;
-            if (!world.isChunkLoaded(chunkX, chunkZ)) {
-                continue;
-            }
-            Block current = world.getBlockAt(position.x(), position.y(), position.z());
-            if (!current.getType().isAir()) {
-                continue;
-            }
-            OriginSet set = chunks.get(new ChunkKey(position.worldId(), chunkX, chunkZ));
-            if (set != null && set.known && set.positions.remove(pack(position.x(), position.y(), position.z(), world.getMinHeight()))) {
-                set.dirty = true;
-            }
+        if (pendingRemovalCount > 0) {
+            scheduleRemovalFlush();
+        }
+    }
+
+    private void discardPendingRemovals(ChunkKey key) {
+        LongOpenHashSet discarded = pendingRemovals.remove(key);
+        if (discarded != null) {
+            pendingRemovalCount -= discarded.size();
         }
     }
 
@@ -292,6 +358,18 @@ public final class BlockOriginService implements Listener {
             throw new IllegalArgumentException("Block Y is outside the supported world range");
         }
         return (normalizedY << 8) | ((z & 15L) << 4) | (x & 15L);
+    }
+
+    private static int unpackLocalX(long packed) {
+        return (int) (packed & 15L);
+    }
+
+    private static int unpackLocalZ(long packed) {
+        return (int) ((packed >>> 4) & 15L);
+    }
+
+    private static int unpackY(long packed, int minimumHeight) {
+        return minimumHeight + (int) (packed >>> 8);
     }
 
     private static byte[] encode(long[] positions) {
@@ -347,12 +425,6 @@ public final class BlockOriginService implements Listener {
     private record ChunkKey(UUID worldId, int x, int z) {
         private static ChunkKey of(Chunk chunk) {
             return new ChunkKey(chunk.getWorld().getUID(), chunk.getX(), chunk.getZ());
-        }
-    }
-
-    private record BlockPosition(UUID worldId, int x, int y, int z) {
-        private static BlockPosition of(Block block) {
-            return new BlockPosition(block.getWorld().getUID(), block.getX(), block.getY(), block.getZ());
         }
     }
 }

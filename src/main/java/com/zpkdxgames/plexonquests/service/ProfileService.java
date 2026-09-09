@@ -4,10 +4,11 @@ import com.zpkdxgames.plexonquests.config.ConfigManager;
 import com.zpkdxgames.plexonquests.integration.IntegrationManager;
 import com.zpkdxgames.plexonquests.persistence.StorageService;
 import com.zpkdxgames.plexonquests.persistence.StoredProfile;
-import java.util.Map;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
 import java.util.logging.Level;
@@ -21,6 +22,7 @@ public final class ProfileService {
     private final ConfigManager configs;
     private final IntegrationManager integrations;
     private final Map<UUID, PlayerProfile> online = new ConcurrentHashMap<>();
+    private final Map<UUID, CompletableFuture<StoredProfile>> loading = new ConcurrentHashMap<>();
     private volatile BiConsumer<Player, PlayerProfile> readyHandler = (player, profile) -> {};
 
     public ProfileService(
@@ -41,21 +43,25 @@ public final class ProfileService {
     public void load(Player player) {
         UUID playerId = player.getUniqueId();
         String name = player.getName();
-        storage.loadProfile(playerId, name).whenComplete((stored, failure) ->
-                Bukkit.getScheduler().runTask(plugin, () -> {
-                    Player current = Bukkit.getPlayer(playerId);
-                    if (current == null || !current.isOnline()) {
-                        return;
-                    }
-                    if (failure != null) {
-                        plugin.getLogger().log(Level.SEVERE, "Could not load quest profile for " + playerId, failure);
-                        return;
-                    }
-                    PlayerProfile profile = fromStored(stored);
-                    refreshRankCategory(profile);
-                    online.put(playerId, profile);
-                    readyHandler.accept(current, profile);
-                }));
+        loading.computeIfAbsent(playerId, ignored -> {
+            CompletableFuture<StoredProfile> future = storage.loadProfile(playerId, name);
+            future.whenComplete((stored, failure) -> Bukkit.getScheduler().runTask(plugin, () -> {
+                loading.remove(playerId, future);
+                Player current = Bukkit.getPlayer(playerId);
+                if (current == null || !current.isOnline()) {
+                    return;
+                }
+                if (failure != null) {
+                    plugin.getLogger().log(Level.SEVERE, "Could not load quest profile for " + playerId, failure);
+                    return;
+                }
+                PlayerProfile profile = fromStored(stored);
+                refreshRankCategory(profile);
+                online.put(playerId, profile);
+                readyHandler.accept(current, profile);
+            }));
+            return future;
+        });
     }
 
     public void unload(Player player) {
@@ -82,6 +88,10 @@ public final class ProfileService {
 
     public int onlineCount() {
         return online.size();
+    }
+
+    public int loadingCount() {
+        return loading.size();
     }
 
     public List<PlayerProfile> onlineProfiles() {

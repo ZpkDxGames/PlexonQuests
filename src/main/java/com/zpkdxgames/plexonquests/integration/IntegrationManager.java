@@ -15,13 +15,17 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.event.Cancellable;
 import org.bukkit.event.Event;
+import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.server.PluginDisableEvent;
+import org.bukkit.event.server.PluginEnableEvent;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.RegisteredServiceProvider;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -31,8 +35,11 @@ public final class IntegrationManager {
 
     private final JavaPlugin plugin;
     private final CoreBridge core;
+    private final Set<String> registeredProgressAdapters = ConcurrentHashMap.newKeySet();
     private volatile Map<String, IntegrationState> states = Map.of();
     private final Listener bridgeListener = new Listener() {};
+    private volatile IntegrationContext progressContext;
+    private boolean lifecycleListenerRegistered;
 
     public IntegrationManager(JavaPlugin plugin, CoreBridge core) {
         this.plugin = plugin;
@@ -113,8 +120,59 @@ public final class IntegrationManager {
             ProfileService profiles,
             RotationService rotations,
             ConfigManager configs) {
-        IntegrationContext context = new IntegrationContext(plugin, configs, progress, profiles, rotations);
-        PlexonIntegrationAdapters.all().forEach(adapter -> adapter.register(context));
+        progressContext = new IntegrationContext(plugin, configs, progress, profiles, rotations);
+        registerAvailableProgressBridges();
+        registerLifecycleListener();
+    }
+
+    private void registerAvailableProgressBridges() {
+        IntegrationContext context = progressContext;
+        if (context == null) {
+            return;
+        }
+        for (IntegrationAdapter adapter : PlexonIntegrationAdapters.all()) {
+            if (registeredProgressAdapters.contains(adapter.id())
+                    || state(adapter.id()).status() != IntegrationStatus.AVAILABLE) {
+                continue;
+            }
+            adapter.register(context);
+            registeredProgressAdapters.add(adapter.id());
+        }
+    }
+
+    private void registerLifecycleListener() {
+        if (lifecycleListenerRegistered) {
+            return;
+        }
+        lifecycleListenerRegistered = true;
+        Bukkit.getPluginManager().registerEvents(new Listener() {
+            @EventHandler(priority = EventPriority.MONITOR)
+            public void onPluginEnable(PluginEnableEvent event) {
+                if (!isTrackedProvider(event.getPlugin())) {
+                    return;
+                }
+                // Run next tick so provider services/events are fully available before reflection discovery.
+                Bukkit.getScheduler().runTask(plugin, () -> {
+                    detect();
+                    registerAvailableProgressBridges();
+                });
+            }
+
+            @EventHandler(priority = EventPriority.MONITOR)
+            public void onPluginDisable(PluginDisableEvent event) {
+                if (!isTrackedProvider(event.getPlugin())) {
+                    return;
+                }
+                // Existing listener registrations are retained and reused if the same provider is re-enabled;
+                // keeping the registered id prevents duplicate callbacks after reload-like lifecycle changes.
+                Bukkit.getScheduler().runTask(plugin, IntegrationManager.this::detect);
+            }
+        }, plugin);
+    }
+
+    private static boolean isTrackedProvider(Plugin provider) {
+        String name = provider.getName();
+        return DESCRIPTORS.values().stream().anyMatch(descriptor -> descriptor.pluginName().equals(name));
     }
 
     private void registerPlayerEvent(

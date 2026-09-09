@@ -2,7 +2,9 @@ package com.zpkdxgames.plexonquests.integration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -10,6 +12,8 @@ import static org.mockito.Mockito.when;
 
 import com.antondev.crates.api.event.CrateOpenEvent;
 import com.antondev.crates.api.event.CrateOpenEvent.OpeningPlan;
+import com.plexon.tools.event.PlexonToolLevelUpEvent;
+import com.plexon.tools.event.PlexonToolProgressEvent;
 import com.zpkdxgames.plexondailyrewards.event.DailyRewardClaimedEvent;
 import com.zpkdxgames.plexonquests.PlexonQuestsPlugin;
 import com.zpkdxgames.plexonquests.config.ConfigManager;
@@ -23,6 +27,7 @@ import com.zpkdxgames.plexonranks.event.PlexonRankupEvent.Rank;
 import java.util.List;
 import java.util.Optional;
 import org.bukkit.Bukkit;
+import org.bukkit.Material;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -50,6 +55,7 @@ class PlexonIntegrationAdaptersTest {
         profiles = mock(ProfileService.class);
         rotations = mock(RotationService.class);
         player = server.addPlayer();
+        when(progress.interested(eq(player), any(ObjectiveType.class))).thenReturn(true);
         when(profiles.profile(player)).thenReturn(Optional.empty());
     }
 
@@ -91,6 +97,68 @@ class PlexonIntegrationAdaptersTest {
         assertEquals("diamond,emerald", contribution.metadata().get("crate.reward"));
         assertEquals("gui", contribution.metadata().get("crate.source"));
         assertEquals("crateopen:tx-crate-1", contribution.sourceToken());
+    }
+
+    @Test
+    void plexonToolsProgressPreservesCoalescedAmountExactly() {
+        MockBukkit.createMockPlugin("PlexonTools");
+        adapter("PLEXON_TOOLS").register(context());
+
+        Bukkit.getPluginManager().callEvent(new PlexonToolProgressEvent(
+                player,
+                "legendary_pickaxe",
+                12L,
+                8L,
+                "pickaxe",
+                "blocks",
+                Material.DIAMOND_ORE,
+                "tools-progress-12"));
+
+        Contribution contribution = captureSingleContribution();
+        assertEquals(ObjectiveType.PLEXON_TOOL_PROGRESS, contribution.type());
+        assertEquals(12L, contribution.amount());
+        assertEquals("legendary_pickaxe", contribution.metadata().get("tool.id"));
+        assertEquals("pickaxe", contribution.metadata().get("tool.category"));
+        assertEquals("blocks", contribution.metadata().get("tool.progress.type"));
+        assertEquals("diamond_ore", contribution.metadata().get("tool.material"));
+        assertEquals("8", contribution.metadata().get("tool.level.new"));
+        assertEquals("toolprogress:tools-progress-12", contribution.sourceToken());
+    }
+
+    @Test
+    void plexonToolsLevelEventPreservesMultiLevelDelta() {
+        MockBukkit.createMockPlugin("PlexonTools");
+        adapter("PLEXON_TOOLS").register(context());
+
+        Bukkit.getPluginManager().callEvent(new PlexonToolLevelUpEvent(
+                player, "legendary_pickaxe", 3L, 7L, "pickaxe", "tools-level-4"));
+
+        Contribution contribution = captureSingleContribution();
+        assertEquals(ObjectiveType.PLEXON_TOOL_LEVEL_UP, contribution.type());
+        assertEquals(4L, contribution.amount());
+        assertEquals("3", contribution.metadata().get("tool.level.old"));
+        assertEquals("7", contribution.metadata().get("tool.level.new"));
+        assertEquals("toollevel:tools-level-4", contribution.sourceToken());
+    }
+
+    @Test
+    void plexonToolsProgressWithNoInterestSkipsContributionEntirely() {
+        when(progress.interested(player, ObjectiveType.PLEXON_TOOL_PROGRESS)).thenReturn(false);
+        MockBukkit.createMockPlugin("PlexonTools");
+        adapter("PLEXON_TOOLS").register(context());
+
+        Bukkit.getPluginManager().callEvent(new PlexonToolProgressEvent(
+                player,
+                "legendary_pickaxe",
+                20L,
+                9L,
+                "pickaxe",
+                "blocks",
+                Material.STONE,
+                "ignored-event"));
+
+        verify(progress).interested(player, ObjectiveType.PLEXON_TOOL_PROGRESS);
+        verify(progress, never()).contribute(eq(player), any(Contribution.class));
     }
 
     @Test

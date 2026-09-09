@@ -1,5 +1,7 @@
 package com.zpkdxgames.plexonquests.objective.tracker;
 
+import com.zpkdxgames.plexonquests.config.ConfigManager;
+import com.zpkdxgames.plexonquests.config.ConfigSnapshot;
 import com.zpkdxgames.plexonquests.objective.Contribution;
 import com.zpkdxgames.plexonquests.objective.ObjectiveType;
 import com.zpkdxgames.plexonquests.service.BlockOriginService;
@@ -40,43 +42,75 @@ import org.bukkit.projectiles.ProjectileSource;
 public final class CoreObjectiveListener implements Listener {
     private final ProgressService progress;
     private final BlockOriginService origins;
+    private final ConfigManager configs;
     private final NamespacedKey spawnReasonKey;
+    private volatile ConfigSnapshot spawnReasonSnapshot;
+    private volatile boolean spawnReasonTracking = true;
 
-    public CoreObjectiveListener(JavaPlugin plugin, ProgressService progress, BlockOriginService origins) {
+    public CoreObjectiveListener(
+            JavaPlugin plugin,
+            ProgressService progress,
+            BlockOriginService origins,
+            ConfigManager configs) {
         this.progress = progress;
         this.origins = origins;
+        this.configs = configs;
         this.spawnReasonKey = new NamespacedKey(plugin, "spawn_reason");
+    }
+
+    /** Compatibility constructor retained for isolated listener tests. */
+    public CoreObjectiveListener(JavaPlugin plugin, ProgressService progress, BlockOriginService origins) {
+        this(plugin, progress, origins, null);
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onBreak(BlockBreakEvent event) {
         Player player = event.getPlayer();
-        BlockOriginService.OriginResult origin = origins.origin(event.getBlock());
-        Contribution breakContribution = blockContribution(
-                ObjectiveType.BREAK_BLOCK,
-                player,
-                event.getBlock().getType(),
-                origin,
-                mature(event));
-        progress.contribute(player, breakContribution);
-        if (mature(event) && isCrop(event.getBlock().getType())) {
-            progress.contribute(player, blockContribution(
-                    ObjectiveType.HARVEST_CROP,
-                    player,
-                    event.getBlock().getType(),
-                    origin,
-                    true));
+        Material material = event.getBlock().getType();
+        try {
+            boolean breakInterested = progress.interested(player, ObjectiveType.BREAK_BLOCK, material);
+            boolean crop = isCrop(material);
+            boolean harvestInterested = crop
+                    && progress.interested(player, ObjectiveType.HARVEST_CROP, material);
+            if (!breakInterested && !harvestInterested) {
+                return;
+            }
+
+            boolean needsMaturity = harvestInterested
+                    || (breakInterested && progress.requiresMaturity(player, ObjectiveType.BREAK_BLOCK, material));
+            boolean mature = !needsMaturity || mature(event);
+
+            boolean needsOrigin = (breakInterested
+                            && progress.requiresOrigin(player, ObjectiveType.BREAK_BLOCK, material))
+                    || (harvestInterested
+                            && progress.requiresOrigin(player, ObjectiveType.HARVEST_CROP, material));
+            BlockOriginService.OriginResult origin = needsOrigin ? origins.origin(event.getBlock()) : null;
+
+            if (breakInterested) {
+                progress.contribute(player, blockContribution(
+                        ObjectiveType.BREAK_BLOCK, player, material, origin, mature));
+            }
+            if (harvestInterested && mature) {
+                progress.contribute(player, blockContribution(
+                        ObjectiveType.HARVEST_CROP, player, material, origin, true));
+            }
+        } finally {
+            // Provenance maintenance is independent from whether a quest currently tracks this block.
+            origins.markBroken(event.getBlock());
         }
-        origins.markBroken(event.getBlock());
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onPlace(BlockPlaceEvent event) {
         Player player = event.getPlayer();
+        Material material = event.getBlockPlaced().getType();
+        if (!progress.interested(player, ObjectiveType.PLACE_BLOCK, material)) {
+            return;
+        }
         progress.contribute(player, new Contribution(
                 ObjectiveType.PLACE_BLOCK,
                 1L,
-                event.getBlockPlaced().getType(),
+                material,
                 null,
                 null,
                 null,
@@ -96,6 +130,9 @@ public final class CoreObjectiveListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onSpawn(CreatureSpawnEvent event) {
+        if (!spawnReasonTrackingRequired()) {
+            return;
+        }
         event.getEntity().getPersistentDataContainer().set(
                 spawnReasonKey, PersistentDataType.STRING, event.getSpawnReason().name());
     }
@@ -103,10 +140,14 @@ public final class CoreObjectiveListener implements Listener {
     @EventHandler(priority = EventPriority.MONITOR)
     public void onDeath(EntityDeathEvent event) {
         Player killer = event.getEntity().getKiller();
-        if (killer == null) {
+        if (killer == null
+                || !progress.interested(killer, ObjectiveType.KILL_ENTITY, event.getEntity().getType())) {
             return;
         }
-        CreatureSpawnEvent.SpawnReason spawnReason = spawnReason(event.getEntity());
+        CreatureSpawnEvent.SpawnReason spawnReason = progress.requiresSpawnReason(
+                        killer, ObjectiveType.KILL_ENTITY, event.getEntity().getType())
+                ? spawnReason(event.getEntity())
+                : null;
         progress.contribute(killer, entityContribution(
                 ObjectiveType.KILL_ENTITY,
                 killer,
@@ -122,19 +163,30 @@ public final class CoreObjectiveListener implements Listener {
         if (player == null || !(event.getEntity() instanceof LivingEntity living)) {
             return;
         }
+        if (!progress.interested(player, ObjectiveType.DAMAGE_ENTITY, living.getType())) {
+            return;
+        }
         long normalizedDamage = Math.max(1L, Math.round(event.getFinalDamage()));
+        CreatureSpawnEvent.SpawnReason spawnReason = progress.requiresSpawnReason(
+                        player, ObjectiveType.DAMAGE_ENTITY, living.getType())
+                ? spawnReason(living)
+                : null;
         progress.contribute(player, entityContribution(
                 ObjectiveType.DAMAGE_ENTITY,
                 player,
                 living,
                 normalizedDamage,
                 event.getCause(),
-                spawnReason(living)));
+                spawnReason));
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onFish(PlayerFishEvent event) {
         if (event.getState() != PlayerFishEvent.State.CAUGHT_FISH || event.getCaught() == null) {
+            return;
+        }
+        Player player = event.getPlayer();
+        if (!progress.interested(player, ObjectiveType.CATCH_FISH)) {
             return;
         }
         Material material = null;
@@ -143,7 +195,13 @@ public final class CoreObjectiveListener implements Listener {
             material = item.getItemStack().getType();
             amount = item.getItemStack().getAmount();
         }
-        Player player = event.getPlayer();
+        boolean candidateInterested = material != null
+                && progress.interested(player, ObjectiveType.CATCH_FISH, material);
+        candidateInterested |= progress.interested(
+                player, ObjectiveType.CATCH_FISH, event.getCaught().getType());
+        if (!candidateInterested) {
+            return;
+        }
         progress.contribute(player, new Contribution(
                 ObjectiveType.CATCH_FISH,
                 amount,
@@ -171,6 +229,9 @@ public final class CoreObjectiveListener implements Listener {
             return;
         }
         ItemStack result = event.getRecipe().getResult();
+        if (!progress.interested(player, ObjectiveType.CRAFT_ITEM, result.getType())) {
+            return;
+        }
         long amount = result.getAmount();
         if (event.isShiftClick()) {
             CraftingInventory crafting = event.getInventory();
@@ -186,19 +247,29 @@ public final class CoreObjectiveListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onFurnaceExtract(FurnaceExtractEvent event) {
-        progress.contribute(event.getPlayer(), itemContribution(
-                ObjectiveType.SMELT_ITEM, event.getPlayer(), event.getItemType(), event.getItemAmount()));
+        Player player = event.getPlayer();
+        if (!progress.interested(player, ObjectiveType.SMELT_ITEM, event.getItemType())) {
+            return;
+        }
+        progress.contribute(player, itemContribution(
+                ObjectiveType.SMELT_ITEM, player, event.getItemType(), event.getItemAmount()));
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onEnchant(EnchantItemEvent event) {
-        progress.contribute(event.getEnchanter(), itemContribution(
-                ObjectiveType.ENCHANT_ITEM, event.getEnchanter(), event.getItem().getType(), 1L));
+        Player player = event.getEnchanter();
+        Material material = event.getItem().getType();
+        if (!progress.interested(player, ObjectiveType.ENCHANT_ITEM, material)) {
+            return;
+        }
+        progress.contribute(player, itemContribution(
+                ObjectiveType.ENCHANT_ITEM, player, material, 1L));
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onBrewingExtract(InventoryClickEvent event) {
         if (!(event.getWhoClicked() instanceof Player player)
+                || !progress.interested(player, ObjectiveType.BREW_POTION)
                 || !(event.getView().getTopInventory() instanceof BrewerInventory)
                 || event.getClickedInventory() != event.getView().getTopInventory()
                 || event.getRawSlot() < 0
@@ -207,7 +278,9 @@ public final class CoreObjectiveListener implements Listener {
             return;
         }
         ItemStack item = event.getCurrentItem();
-        if (item == null || item.getType().isAir()) {
+        if (item == null
+                || item.getType().isAir()
+                || !progress.interested(player, ObjectiveType.BREW_POTION, item.getType())) {
             return;
         }
         int amount = removedAmount(
@@ -221,12 +294,19 @@ public final class CoreObjectiveListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void onWorldChange(PlayerChangedWorldEvent event) {
-        progress.contribute(event.getPlayer(), Contribution.simple(ObjectiveType.VISIT_WORLD, 1L, event.getPlayer()));
+        Player player = event.getPlayer();
+        if (!progress.interested(player, ObjectiveType.VISIT_WORLD)) {
+            return;
+        }
+        progress.contribute(player, Contribution.simple(ObjectiveType.VISIT_WORLD, 1L, player));
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void onAdvancement(PlayerAdvancementDoneEvent event) {
         Player player = event.getPlayer();
+        if (!progress.interested(player, ObjectiveType.COMPLETE_ADVANCEMENT)) {
+            return;
+        }
         progress.contribute(player, new Contribution(
                 ObjectiveType.COMPLETE_ADVANCEMENT,
                 1L,
@@ -248,6 +328,22 @@ public final class CoreObjectiveListener implements Listener {
                 ""));
     }
 
+    private boolean spawnReasonTrackingRequired() {
+        if (configs == null) {
+            return true;
+        }
+        ConfigSnapshot snapshot = configs.snapshot();
+        if (snapshot != spawnReasonSnapshot) {
+            boolean required = snapshot.registry().quests().values().stream()
+                    .filter(quest -> quest.enabled())
+                    .flatMap(quest -> quest.objectives().values().stream())
+                    .anyMatch(objective -> !objective.filters().spawnReasons().isEmpty());
+            spawnReasonTracking = required;
+            spawnReasonSnapshot = snapshot;
+        }
+        return spawnReasonTracking;
+    }
+
     private static Contribution blockContribution(
             ObjectiveType type,
             Player player,
@@ -264,8 +360,8 @@ public final class CoreObjectiveListener implements Listener {
                 player.getWorld().getName(),
                 player.getWorld().getEnvironment(),
                 player.getGameMode(),
-                origin.known(),
-                origin.natural(),
+                origin != null && origin.known(),
+                origin != null && origin.natural(),
                 mature,
                 false,
                 false,

@@ -167,22 +167,25 @@ final class PlexonIntegrationAdapters {
                     if (player == null) {
                         return;
                     }
-                    Object fromRank = value(from, event);
-                    Object toRank = value(to, event);
-                    String previous = normalize(text(fromId, fromRank));
-                    String current = normalize(text(toId, toRank));
-                    String transaction = text(transactionId, event).trim();
-                    Set<String> categories = context.configs().snapshot().settings().rankProgression().categories().keySet();
-                    Map<String, String> metadata = Map.of(
-                            "rank.from", previous,
-                            "rank.to", current,
-                            "rank.category.from", category(previous, categories),
-                            "rank.category.to", category(current, categories),
-                            "rank.transaction", transaction);
-                    String token = transaction.isBlank() ? "" : "rankup:" + transaction;
-                    context.progress().contribute(
-                            player,
-                            Contribution.integration(ObjectiveType.PLEXON_RANK_UP, 1L, player, metadata, token));
+                    if (context.progress().interested(player, ObjectiveType.PLEXON_RANK_UP)) {
+                        Object fromRank = value(from, event);
+                        Object toRank = value(to, event);
+                        String previous = normalize(text(fromId, fromRank));
+                        String current = normalize(text(toId, toRank));
+                        String transaction = text(transactionId, event).trim();
+                        Set<String> categories = context.configs().snapshot().settings().rankProgression().categories().keySet();
+                        Map<String, String> metadata = Map.of(
+                                "rank.from", previous,
+                                "rank.to", current,
+                                "rank.category.from", category(previous, categories),
+                                "rank.category.to", category(current, categories),
+                                "rank.transaction", transaction);
+                        String token = transaction.isBlank() ? "" : "rankup:" + transaction;
+                        context.progress().contribute(
+                                player,
+                                Contribution.integration(ObjectiveType.PLEXON_RANK_UP, 1L, player, metadata, token));
+                    }
+                    // Rank category/slot refresh is integration state, not quest-progress work.
                     context.profiles().profile(player).ifPresent(profile -> refreshRank(context, player, profile));
                 });
             } catch (ReflectiveOperationException | LinkageError exception) {
@@ -220,8 +223,15 @@ final class PlexonIntegrationAdapters {
                 Method source = optional(planType, "source");
                 listen(context, type, event -> {
                     Player target = player(player, event);
+                    if (target == null || !context.progress().interested(target, ObjectiveType.PLEXON_CRATE_OPEN)) {
+                        return;
+                    }
                     Object opening = value(plan, event);
-                    if (target == null || opening == null) {
+                    if (opening == null) {
+                        return;
+                    }
+                    long amount = number(openingCount, opening, 1L);
+                    if (amount <= 0L) {
                         return;
                     }
                     Map<String, String> metadata = new LinkedHashMap<>();
@@ -236,7 +246,6 @@ final class PlexonIntegrationAdapters {
                     }
                     String transaction = text(transactionId, opening).trim();
                     String token = transaction.isBlank() ? "" : "crateopen:" + transaction;
-                    long amount = Math.max(1L, number(openingCount, opening, 1L));
                     context.progress().contribute(
                             target,
                             Contribution.integration(ObjectiveType.PLEXON_CRATE_OPEN, amount, target, metadata, token));
@@ -267,7 +276,8 @@ final class PlexonIntegrationAdapters {
                 Method forced = required(type, "isForced");
                 listen(context, type, event -> {
                     Player player = player(getPlayer, event);
-                    if (player == null) {
+                    if (player == null
+                            || !context.progress().interested(player, ObjectiveType.PLEXON_DAILY_REWARD_CLAIM)) {
                         return;
                     }
                     String tierId = normalize(text(tier, event));
@@ -315,9 +325,15 @@ final class PlexonIntegrationAdapters {
                 Method eventId = optional(type, "eventId", "transactionId", "getEventId");
                 listen(context, type, event -> {
                     Player target = player(player, event);
-                    if (target == null) return;
+                    if (target == null || !context.progress().interested(target, ObjectiveType.PLEXON_TOOL_LEVEL_UP)) {
+                        return;
+                    }
                     long oldValue = number(oldLevel, event, 0L);
                     long newValue = number(newLevel, event, oldValue + 1L);
+                    long delta = newValue - oldValue;
+                    if (delta <= 0L) {
+                        return;
+                    }
                     Map<String, String> metadata = new LinkedHashMap<>();
                     metadata.put("tool.id", normalize(text(toolId, event)));
                     put(metadata, "tool.category", normalize(text(category, event)));
@@ -326,7 +342,7 @@ final class PlexonIntegrationAdapters {
                     String id = text(eventId, event).trim();
                     context.progress().contribute(target, Contribution.integration(
                             ObjectiveType.PLEXON_TOOL_LEVEL_UP,
-                            Math.max(1L, newValue - oldValue),
+                            delta,
                             target,
                             metadata,
                             id.isBlank() ? "" : "toollevel:" + id));
@@ -349,7 +365,13 @@ final class PlexonIntegrationAdapters {
                 Method eventId = optional(type, "eventId", "transactionId", "getEventId");
                 listen(context, type, event -> {
                     Player target = player(player, event);
-                    if (target == null) return;
+                    if (target == null || !context.progress().interested(target, ObjectiveType.PLEXON_TOOL_PROGRESS)) {
+                        return;
+                    }
+                    long delta = number(amount, event, 1L);
+                    if (delta <= 0L) {
+                        return;
+                    }
                     Map<String, String> metadata = new LinkedHashMap<>();
                     metadata.put("tool.id", normalize(text(toolId, event)));
                     put(metadata, "tool.category", normalize(text(category, event)));
@@ -361,11 +383,13 @@ final class PlexonIntegrationAdapters {
                         metadata.put("tool.material", normalize(String.valueOf(materialValue)));
                     }
                     long levelValue = number(level, event, 0L);
-                    if (levelValue > 0L) metadata.put("tool.level.new", Long.toString(levelValue));
+                    if (levelValue > 0L) {
+                        metadata.put("tool.level.new", Long.toString(levelValue));
+                    }
                     String id = text(eventId, event).trim();
                     context.progress().contribute(target, Contribution.integration(
                             ObjectiveType.PLEXON_TOOL_PROGRESS,
-                            Math.max(1L, number(amount, event, 1L)),
+                            delta,
                             target,
                             metadata,
                             id.isBlank() ? "" : "toolprogress:" + id));
@@ -404,7 +428,9 @@ final class PlexonIntegrationAdapters {
                 Method eventId = optional(type, "eventId", "transactionId", "getEventId");
                 listen(context, type, event -> {
                     Player target = player(player, event);
-                    if (target == null) return;
+                    if (target == null || !context.progress().interested(target, objective)) {
+                        return;
+                    }
                     Map<String, String> metadata = new LinkedHashMap<>();
                     metadata.put("key.category", normalize(text(category, event)));
                     put(metadata, "key.source", normalize(text(source, event)));
@@ -451,12 +477,16 @@ final class PlexonIntegrationAdapters {
                 Method eventId = optional(type, "eventId", "transactionId", "getEventId");
                 listen(context, type, event -> {
                     Player target = player(player, event);
-                    if (target == null) return;
+                    if (target == null || !context.progress().interested(target, objective)) {
+                        return;
+                    }
                     Map<String, String> metadata = new LinkedHashMap<>();
                     put(metadata, "shop.id", normalize(text(shopId, event)));
                     put(metadata, "shop.type", normalize(text(shopType, event)));
                     Object ratingValue = value(rating, event);
-                    if (ratingValue != null) metadata.put("shop.rating", String.valueOf(ratingValue));
+                    if (ratingValue != null) {
+                        metadata.put("shop.rating", String.valueOf(ratingValue));
+                    }
                     String id = text(eventId, event).trim();
                     context.progress().contribute(target, Contribution.integration(
                             objective,

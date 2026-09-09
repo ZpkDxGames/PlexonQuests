@@ -4,6 +4,23 @@ All notable changes to PlexonQuests are documented here.
 
 ## [Unreleased]
 
+## [3.2.0] - 2026-09-09
+
+- Added per-player objective-interest indexes with type, material, and entity fast gates so irrelevant gameplay events bypass quest processing before expensive context or allocations are created.
+- Removed completed and reroll-reserved objectives from active candidate indexes and precomputed requirement flags and cooldown keys used by hot contribution paths.
+- Optimized block, crop, kill, damage, craft, brew, fish, smelt, enchant, world, and advancement listeners while preserving natural-block provenance bookkeeping and fail-closed semantics.
+- Added lazy origin, crop-maturity, and spawn-reason lookups; global spawn-reason tracking now disables itself when no enabled definition can consume it.
+- Reduced contribution-path overhead with direct synchronous handling for ordinary main-thread contributions and one monotonic-time snapshot per application.
+- Reworked block-origin removal batching to use bounded, deduplicated chunk-grouped primitive position queues instead of unbounded per-block object lists.
+- Changed travel/play-time sampling to iterate only players with matching active objective interest and retain fractional progress across scheduler refreshes.
+- Moved actionbar/bossbar rendering behind throttle checks so suppressed feedback no longer pays formatting and component-building costs.
+- Added in-flight profile-load deduplication to prevent duplicate storage reads and duplicate attach callbacks during login bursts.
+- Added first-party Plexon integration fast gates, exact coalesced amount handling for PlexonTools progress events, and provider enable/disable lifecycle handling without duplicate listener registration.
+- Added reload-safe maintenance and activity scheduler ownership so runtime configuration swaps replace tasks instead of stacking duplicate jobs.
+- Preserved the existing bounded single-writer SQLite/WAL model, coalesced dirty-assignment persistence, claim transaction safety, quest semantics, GUI behavior, and public API contracts.
+- Expanded regression coverage for no-interest listener paths, objective-interest indexing, provenance bookkeeping, scheduler behavior, and PlexonTools coalesced progress/multi-level event contracts.
+- Updated release packaging for version-independent distribution verification and automated 3.2.0 JAR/checksum publication.
+
 ## [3.1.0] - 2026-09-07
 
 - Added PlexonCore 1.x module registration for module `quests`, including `STARTING`, `READY`, `DEGRADED`, and `FAILED` lifecycle reporting and safe unregister on shutdown.
