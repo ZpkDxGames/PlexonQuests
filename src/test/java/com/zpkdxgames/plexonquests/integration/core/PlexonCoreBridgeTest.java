@@ -35,7 +35,7 @@ class PlexonCoreBridgeTest {
     }
 
     @Test
-    void compatibleCoreRegistersLifecycleAndUnregisters() {
+    void coreOneRegistersAsLegacyCompatibilityMode() {
         PlexonQuestsPlugin plugin = loadQuests();
         CoreVersion version = CoreVersion.of(1, 0, "1.0.0");
         ModuleRegistry modules = new ModuleRegistry(version);
@@ -47,7 +47,8 @@ class PlexonCoreBridgeTest {
         bridge.registerStarting();
 
         assertTrue(bridge.compatible());
-        assertEquals("CORE", bridge.mode());
+        assertFalse(bridge.runtimeAvailable());
+        assertEquals("CORE_LEGACY", bridge.mode());
         assertEquals(ModuleState.STARTING, modules.find(CoreBridge.MODULE_ID).orElseThrow().state());
         assertEquals(CoreBridge.ProviderHint.MISSING, bridge.providerHint("PLEXON_RANKS"));
 
@@ -65,9 +66,9 @@ class PlexonCoreBridgeTest {
     }
 
     @Test
-    void incompatibleCoreRegistersIncompatibleAndNeverBecomesReady() {
+    void coreThreeRegistersIncompatibleAndNeverBecomesReady() {
         PlexonQuestsPlugin plugin = loadQuests();
-        CoreVersion version = CoreVersion.of(2, 0, "2.0.0");
+        CoreVersion version = CoreVersion.of(3, 0, "3.0.0");
         ModuleRegistry modules = new ModuleRegistry(version);
         IntegrationRegistry integrations = new IntegrationRegistry(Bukkit.getPluginManager());
         integrations.refresh();
@@ -77,6 +78,7 @@ class PlexonCoreBridgeTest {
         bridge.registerStarting();
 
         assertFalse(bridge.compatible());
+        assertFalse(bridge.runtimeAvailable());
         assertEquals("STANDALONE", bridge.mode());
         assertEquals(ModuleState.INCOMPATIBLE, modules.find(CoreBridge.MODULE_ID).orElseThrow().state());
 
