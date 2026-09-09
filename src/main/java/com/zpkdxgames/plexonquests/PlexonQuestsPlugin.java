@@ -3,6 +3,7 @@ package com.zpkdxgames.plexonquests;
 import com.zpkdxgames.plexonquests.api.PlexonQuestsAPI;
 import com.zpkdxgames.plexonquests.api.PlexonQuestsAPIImpl;
 import com.zpkdxgames.plexonquests.command.QuestCommand;
+import com.zpkdxgames.plexonquests.command.RuntimeAwareQuestCommand;
 import com.zpkdxgames.plexonquests.config.ConfigManager;
 import com.zpkdxgames.plexonquests.config.ConfigSnapshot;
 import com.zpkdxgames.plexonquests.gui.MenuListener;
@@ -161,7 +162,7 @@ public class PlexonQuestsPlugin extends JavaPlugin {
     private void registerCommand(
             AssignmentService assignments, RewardService rewards, MenuService menus, TextService text) {
         PluginCommand command = Objects.requireNonNull(getCommand("quests"), "quests command missing from plugin.yml");
-        QuestCommand handler = new QuestCommand(
+        QuestCommand baseHandler = new QuestCommand(
                 this,
                 configs,
                 profiles,
@@ -173,10 +174,10 @@ public class PlexonQuestsPlugin extends JavaPlugin {
                 storage,
                 integrations,
                 origins,
-                coreRuntime,
-                coreOriginMigrator,
                 text,
                 configExecutor);
+        RuntimeAwareQuestCommand handler = new RuntimeAwareQuestCommand(
+                baseHandler, coreRuntime, coreOriginMigrator, text);
         command.setExecutor(handler);
         command.setTabCompleter(handler);
     }
