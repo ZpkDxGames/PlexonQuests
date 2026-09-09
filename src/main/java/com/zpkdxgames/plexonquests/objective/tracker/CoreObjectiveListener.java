@@ -2,12 +2,15 @@ package com.zpkdxgames.plexonquests.objective.tracker;
 
 import com.zpkdxgames.plexonquests.config.ConfigManager;
 import com.zpkdxgames.plexonquests.config.ConfigSnapshot;
+import com.zpkdxgames.plexonquests.integration.core.CoreOriginMigrator;
+import com.zpkdxgames.plexonquests.integration.core.CoreRuntime;
+import com.zpkdxgames.plexonquests.integration.core.CoreRuntimeCoordinator;
 import com.zpkdxgames.plexonquests.objective.Contribution;
 import com.zpkdxgames.plexonquests.objective.ObjectiveType;
+import com.zpkdxgames.plexonquests.objective.block.BlockObjectiveProcessor;
 import com.zpkdxgames.plexonquests.service.BlockOriginService;
 import com.zpkdxgames.plexonquests.service.ProgressService;
 import java.util.Locale;
-import org.bukkit.GameMode;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
 import org.bukkit.block.data.Ageable;
@@ -43,6 +46,9 @@ public final class CoreObjectiveListener implements Listener {
     private final ProgressService progress;
     private final BlockOriginService origins;
     private final ConfigManager configs;
+    private final BlockObjectiveProcessor blockProcessor;
+    private final CoreRuntimeCoordinator coreRuntime;
+    private final CoreOriginMigrator coreOrigins;
     private final NamespacedKey spawnReasonKey;
     private volatile ConfigSnapshot spawnReasonSnapshot;
     private volatile boolean spawnReasonTracking = true;
@@ -51,81 +57,93 @@ public final class CoreObjectiveListener implements Listener {
             JavaPlugin plugin,
             ProgressService progress,
             BlockOriginService origins,
-            ConfigManager configs) {
+            ConfigManager configs,
+            CoreRuntimeCoordinator coreRuntime,
+            CoreOriginMigrator coreOrigins) {
         this.progress = progress;
         this.origins = origins;
         this.configs = configs;
+        this.blockProcessor = new BlockObjectiveProcessor(progress);
+        this.coreRuntime = coreRuntime;
+        this.coreOrigins = coreOrigins;
         this.spawnReasonKey = new NamespacedKey(plugin, "spawn_reason");
+    }
+
+    public CoreObjectiveListener(
+            JavaPlugin plugin,
+            ProgressService progress,
+            BlockOriginService origins,
+            ConfigManager configs,
+            CoreRuntimeCoordinator coreRuntime) {
+        this(plugin, progress, origins, configs, coreRuntime, null);
+    }
+
+    public CoreObjectiveListener(
+            JavaPlugin plugin,
+            ProgressService progress,
+            BlockOriginService origins,
+            ConfigManager configs) {
+        this(plugin, progress, origins, configs, null, null);
     }
 
     /** Compatibility constructor retained for isolated listener tests. */
     public CoreObjectiveListener(JavaPlugin plugin, ProgressService progress, BlockOriginService origins) {
-        this(plugin, progress, origins, null);
+        this(plugin, progress, origins, null, null, null);
     }
 
-    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    @EventHandler(priority = EventPriority.MONITOR)
     public void onBreak(BlockBreakEvent event) {
+        CoreRuntime.BlockFact coreFact = coreRuntime == null ? null : coreRuntime.consume(event);
+        if (event.isCancelled()) {
+            return;
+        }
+
         Player player = event.getPlayer();
         Material material = event.getBlock().getType();
+        boolean coreOrigin = coreRuntime != null && coreRuntime.coreOriginAuthoritative();
+        boolean localOrigin = coreRuntime == null || coreRuntime.localOriginAuthoritative();
         try {
-            boolean breakInterested = progress.interested(player, ObjectiveType.BREAK_BLOCK, material);
-            boolean crop = isCrop(material);
-            boolean harvestInterested = crop
-                    && progress.interested(player, ObjectiveType.HARVEST_CROP, material);
-            if (!breakInterested && !harvestInterested) {
-                return;
-            }
+            blockProcessor.breakBlock(
+                    player,
+                    material,
+                    () -> mature(event),
+                    () -> {
+                        if (coreOrigin) {
+                            return coreOrigins == null
+                                    ? BlockObjectiveProcessor.OriginState.UNKNOWN
+                                    : coreOrigins.resolve(event.getBlock(), coreFact);
+                        }
 
-            boolean needsMaturity = harvestInterested
-                    || (breakInterested && progress.requiresMaturity(player, ObjectiveType.BREAK_BLOCK, material));
-            boolean mature = !needsMaturity || mature(event);
-
-            boolean needsOrigin = (breakInterested
-                            && progress.requiresOrigin(player, ObjectiveType.BREAK_BLOCK, material))
-                    || (harvestInterested
-                            && progress.requiresOrigin(player, ObjectiveType.HARVEST_CROP, material));
-            BlockOriginService.OriginResult origin = needsOrigin ? origins.origin(event.getBlock()) : null;
-
-            if (breakInterested) {
-                progress.contribute(player, blockContribution(
-                        ObjectiveType.BREAK_BLOCK, player, material, origin, mature));
-            }
-            if (harvestInterested && mature) {
-                progress.contribute(player, blockContribution(
-                        ObjectiveType.HARVEST_CROP, player, material, origin, true));
-            }
+                        BlockObjectiveProcessor.OriginState local = localOrigin(event);
+                        if (coreRuntime != null && coreRuntime.shadowMode()) {
+                            BlockObjectiveProcessor.OriginState coreState = coreOrigins == null
+                                    ? coreRuntime.origin(coreFact)
+                                    : coreOrigins.resolve(event.getBlock(), coreFact);
+                            coreRuntime.recordShadowComparison(local, coreState);
+                        }
+                        return local;
+                    });
         } finally {
-            // Provenance maintenance is independent from whether a quest currently tracks this block.
-            origins.markBroken(event.getBlock());
+            if (localOrigin) {
+                // LOCAL and SHADOW keep PlexonQuests provenance authoritative and maintained.
+                origins.markBroken(event.getBlock());
+            }
         }
+    }
+
+    private BlockObjectiveProcessor.OriginState localOrigin(BlockBreakEvent event) {
+        BlockOriginService.OriginResult local = origins.origin(event.getBlock());
+        if (!local.known()) {
+            return BlockObjectiveProcessor.OriginState.UNKNOWN;
+        }
+        return local.natural()
+                ? BlockObjectiveProcessor.OriginState.NATURAL
+                : BlockObjectiveProcessor.OriginState.PLAYER_PLACED;
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onPlace(BlockPlaceEvent event) {
-        Player player = event.getPlayer();
-        Material material = event.getBlockPlaced().getType();
-        if (!progress.interested(player, ObjectiveType.PLACE_BLOCK, material)) {
-            return;
-        }
-        progress.contribute(player, new Contribution(
-                ObjectiveType.PLACE_BLOCK,
-                1L,
-                material,
-                null,
-                null,
-                null,
-                player.getWorld().getName(),
-                player.getWorld().getEnvironment(),
-                player.getGameMode(),
-                true,
-                false,
-                true,
-                false,
-                false,
-                true,
-                "",
-                "",
-                ""));
+        blockProcessor.placeBlock(event.getPlayer(), event.getBlockPlaced().getType());
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -344,33 +362,6 @@ public final class CoreObjectiveListener implements Listener {
         return spawnReasonTracking;
     }
 
-    private static Contribution blockContribution(
-            ObjectiveType type,
-            Player player,
-            Material material,
-            BlockOriginService.OriginResult origin,
-            boolean mature) {
-        return new Contribution(
-                type,
-                1L,
-                material,
-                null,
-                null,
-                null,
-                player.getWorld().getName(),
-                player.getWorld().getEnvironment(),
-                player.getGameMode(),
-                origin != null && origin.known(),
-                origin != null && origin.natural(),
-                mature,
-                false,
-                false,
-                true,
-                "",
-                "",
-                "");
-    }
-
     private static Contribution entityContribution(
             ObjectiveType type,
             Player player,
@@ -449,14 +440,6 @@ public final class CoreObjectiveListener implements Listener {
     private static boolean mature(BlockBreakEvent event) {
         return !(event.getBlock().getBlockData() instanceof Ageable ageable)
                 || ageable.getAge() >= ageable.getMaximumAge();
-    }
-
-    private static boolean isCrop(Material material) {
-        return material == Material.WHEAT
-                || material == Material.CARROTS
-                || material == Material.POTATOES
-                || material == Material.BEETROOTS
-                || material == Material.NETHER_WART;
     }
 
     private static int maximumCrafts(CraftingInventory inventory) {

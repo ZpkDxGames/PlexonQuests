@@ -3,6 +3,7 @@ package com.zpkdxgames.plexonquests;
 import com.zpkdxgames.plexonquests.api.PlexonQuestsAPI;
 import com.zpkdxgames.plexonquests.api.PlexonQuestsAPIImpl;
 import com.zpkdxgames.plexonquests.command.QuestCommand;
+import com.zpkdxgames.plexonquests.command.RuntimeAwareQuestCommand;
 import com.zpkdxgames.plexonquests.config.ConfigManager;
 import com.zpkdxgames.plexonquests.config.ConfigSnapshot;
 import com.zpkdxgames.plexonquests.gui.MenuListener;
@@ -11,6 +12,8 @@ import com.zpkdxgames.plexonquests.integration.IntegrationManager;
 import com.zpkdxgames.plexonquests.integration.PlexonQuestsExpansion;
 import com.zpkdxgames.plexonquests.integration.core.CoreBridge;
 import com.zpkdxgames.plexonquests.integration.core.CoreBridgeFactory;
+import com.zpkdxgames.plexonquests.integration.core.CoreOriginMigrator;
+import com.zpkdxgames.plexonquests.integration.core.CoreRuntimeCoordinator;
 import com.zpkdxgames.plexonquests.objective.tracker.ActivitySampler;
 import com.zpkdxgames.plexonquests.objective.tracker.CoreObjectiveListener;
 import com.zpkdxgames.plexonquests.persistence.StorageService;
@@ -58,6 +61,9 @@ public class PlexonQuestsPlugin extends JavaPlugin {
     private ActivitySampler activity;
     private PlexonQuestsExpansion expansion;
     private CoreBridge core;
+    private CoreRuntimeCoordinator coreRuntime;
+    private CoreOriginMigrator coreOriginMigrator;
+    private boolean localOriginAuthority;
     private final List<BukkitTask> maintenanceTasks = new ArrayList<>();
     private BukkitTask configWatchTask;
     private ConfigSnapshot runtimeScheduleSnapshot;
@@ -93,6 +99,14 @@ public class PlexonQuestsPlugin extends JavaPlugin {
             rerolls = new RerollService(this, configs, storage, profiles, progress, eligibility, text);
             RewardService rewards = new RewardService(this, configs, storage, profiles, progress, text, effects);
             origins = new BlockOriginService(this, configs);
+
+            coreRuntime = new CoreRuntimeCoordinator(this, configs, core);
+            coreRuntime.start();
+            localOriginAuthority = coreRuntime.localOriginAuthoritative();
+            if (coreRuntime.originMigrationAvailable()) {
+                coreOriginMigrator = new CoreOriginMigrator(this, core.runtime(), configs);
+            }
+
             MenuService menus = new MenuService(
                     this, configs, profiles, storage, rewards, rerolls, integrations, origins, text, configExecutor);
 
@@ -105,18 +119,21 @@ public class PlexonQuestsPlugin extends JavaPlugin {
             effects.start();
             activity = new ActivitySampler(this, configs, progress);
             activity.start();
-            origins.loadExistingChunks();
+            if (localOriginAuthority) {
+                origins.loadExistingChunks();
+            }
             configureProfiles(text);
             scheduleMaintenance();
             startRuntimeConfigWatcher();
             Bukkit.getOnlinePlayers().forEach(profiles::load);
             started = true;
-            core.markReady("Quest engine ready; definitions loaded successfully");
+            core.markReady("Quest engine ready; block acquisition=" + coreRuntime.acquisitionMode()
+                    + "; origin=" + coreRuntime.originProvider());
 
             getLogger().info("PlexonQuests " + getPluginMeta().getVersion() + " enabled with "
                     + initial.registry().quests().size() + " quests, " + initial.registry().pools().size()
-                    + " pools, and " + initial.registry().errorCount() + " quarantined definition error(s). Core mode: "
-                    + core.mode() + ".");
+                    + " pools, and " + initial.registry().errorCount() + " quarantined definition error(s). Runtime: "
+                    + coreRuntime.acquisitionMode() + "; origin provider: " + coreRuntime.originProvider() + ".");
         } catch (Exception exception) {
             if (core != null) {
                 core.markFailed("Quest startup failed: " + exception.getClass().getSimpleName());
@@ -130,8 +147,14 @@ public class PlexonQuestsPlugin extends JavaPlugin {
     private void registerListeners(RewardService rewards, TextService text, MenuService menus) {
         var manager = Bukkit.getPluginManager();
         manager.registerEvents(new MenuListener(configs), this);
-        manager.registerEvents(new CoreObjectiveListener(this, progress, origins, configs), this);
-        manager.registerEvents(origins, this);
+        manager.registerEvents(
+                new CoreObjectiveListener(this, progress, origins, configs, coreRuntime, coreOriginMigrator), this);
+        if (localOriginAuthority) {
+            manager.registerEvents(origins, this);
+        }
+        if (coreOriginMigrator != null) {
+            manager.registerEvents(coreOriginMigrator, this);
+        }
         manager.registerEvents(new PlayerLifecycleListener(profiles, progress, rerolls), this);
         manager.registerEvents(new QuestNotificationListener(profiles, rewards, text), this);
     }
@@ -139,7 +162,7 @@ public class PlexonQuestsPlugin extends JavaPlugin {
     private void registerCommand(
             AssignmentService assignments, RewardService rewards, MenuService menus, TextService text) {
         PluginCommand command = Objects.requireNonNull(getCommand("quests"), "quests command missing from plugin.yml");
-        QuestCommand handler = new QuestCommand(
+        QuestCommand baseHandler = new QuestCommand(
                 this,
                 configs,
                 profiles,
@@ -153,6 +176,8 @@ public class PlexonQuestsPlugin extends JavaPlugin {
                 origins,
                 text,
                 configExecutor);
+        RuntimeAwareQuestCommand handler = new RuntimeAwareQuestCommand(
+                baseHandler, coreRuntime, coreOriginMigrator, text);
         command.setExecutor(handler);
         command.setTabCompleter(handler);
     }
@@ -211,6 +236,15 @@ public class PlexonQuestsPlugin extends JavaPlugin {
         }
         runtimeScheduleSnapshot = snapshot;
 
+        if (coreRuntime != null) {
+            try {
+                coreRuntime.refresh();
+            } catch (RuntimeException exception) {
+                getLogger().log(Level.SEVERE,
+                        "Core Runtime subscription refresh failed; previous runtime remains active", exception);
+                core.markDegraded("Core Runtime refresh failed; restart recommended");
+            }
+        }
         integrations.detect();
         profiles.onlineProfiles().forEach(profile -> {
             profiles.refreshRankCategory(profile);
@@ -288,6 +322,18 @@ public class PlexonQuestsPlugin extends JavaPlugin {
         }
         cancelMaintenanceTasks();
         runtimeScheduleSnapshot = null;
+        if (coreRuntime != null) {
+            try {
+                coreRuntime.close();
+            } catch (RuntimeException exception) {
+                getLogger().log(Level.WARNING, "Could not close Core Runtime subscriptions cleanly", exception);
+            }
+            coreRuntime = null;
+        }
+        if (coreOriginMigrator != null) {
+            coreOriginMigrator.close();
+            coreOriginMigrator = null;
+        }
         if (expansion != null) {
             expansion.unregister();
             expansion = null;
@@ -300,7 +346,7 @@ public class PlexonQuestsPlugin extends JavaPlugin {
             effects.close();
             effects = null;
         }
-        if (origins != null) {
+        if (origins != null && localOriginAuthority) {
             try {
                 origins.saveAll();
             } catch (RuntimeException exception) {

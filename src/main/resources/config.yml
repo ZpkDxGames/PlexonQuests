@@ -2,6 +2,15 @@ schema-version: 1
 
 locale: en_US
 
+# Core 2 runtime acquisition/origin authority.
+# AUTO   = use Core when it is safely authoritative, otherwise local fallback.
+# CORE   = require Core Runtime + safe origin import support.
+# LOCAL  = keep PlexonQuests local block acquisition/provenance authority.
+# SHADOW = use Core event acquisition, keep local provenance authoritative, and compare Core/local origin.
+# Changing authority mode requires a server restart.
+core-runtime:
+  mode: AUTO
+
 rotation:
   timezone: America/Sao_Paulo
   daily-reset: "04:00"
@@ -112,4 +121,3 @@ privacy:
   log-player-uuids: true
   log-player-names: true
   expose-database-path-in-player-errors: false
-

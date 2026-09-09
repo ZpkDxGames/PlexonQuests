@@ -6,13 +6,17 @@ import com.zpkdxgames.plexoncore.module.ModuleRegistry;
 import com.zpkdxgames.plexoncore.module.ModuleRegistry.ModuleDescriptor;
 import com.zpkdxgames.plexoncore.module.ModuleRegistry.ModuleState;
 import com.zpkdxgames.plexoncore.module.ModuleRegistry.ModuleVersionRange;
+import java.lang.reflect.InvocationTargetException;
 import java.time.Instant;
 import java.util.Set;
+import java.util.logging.Level;
 import org.bukkit.Bukkit;
 import org.bukkit.plugin.RegisteredServiceProvider;
 import org.bukkit.plugin.java.JavaPlugin;
 
 public final class PlexonCoreBridge implements CoreBridge {
+    private static final String CORE2_RUNTIME_CLASS =
+            "com.zpkdxgames.plexonquests.integration.core.PlexonCore2Runtime";
     private static final Set<String> CAPABILITIES = Set.of(
             "quest-engine",
             "quest-rotations",
@@ -21,12 +25,15 @@ public final class PlexonCoreBridge implements CoreBridge {
             "quest-integrations",
             "sqlite-persistence",
             "minimessage",
-            "placeholderapi");
+            "placeholderapi",
+            "core-runtime-block-break",
+            "core-shared-block-origin");
 
     private final JavaPlugin plugin;
     private final PlexonCoreAPI core;
     private final CoreVersion version;
     private final boolean compatible;
+    private final CoreRuntime runtime;
     private boolean ownsRegistration;
     private String registrationState = "NOT_REGISTERED";
     private String detail = "PlexonCore API resolved";
@@ -43,6 +50,24 @@ public final class PlexonCoreBridge implements CoreBridge {
         this.compatible = ModuleVersionRange.parse(SUPPORTED_API_RANGE).contains(version);
         if (!compatible) {
             detail = "Core API " + version.apiVersion() + " is outside supported range " + SUPPORTED_API_RANGE;
+        }
+        this.runtime = resolveRuntime();
+    }
+
+    private CoreRuntime resolveRuntime() {
+        if (!compatible || version.apiMajor() < 2) {
+            return CoreRuntime.unavailable("Core Runtime requires PlexonCore API 2.x");
+        }
+        try {
+            Class<?> type = Class.forName(CORE2_RUNTIME_CLASS, true, PlexonCoreBridge.class.getClassLoader());
+            return (CoreRuntime) type.getConstructor(JavaPlugin.class).newInstance(plugin);
+        } catch (InvocationTargetException exception) {
+            Throwable cause = exception.getCause() == null ? exception : exception.getCause();
+            plugin.getLogger().log(Level.WARNING, "PlexonCore 2 Runtime adapter could not start", cause);
+            return CoreRuntime.unavailable("Core 2 Runtime adapter failed: " + cause.getClass().getSimpleName());
+        } catch (ReflectiveOperationException | LinkageError | RuntimeException exception) {
+            plugin.getLogger().log(Level.WARNING, "PlexonCore 2 Runtime adapter could not be linked", exception);
+            return CoreRuntime.unavailable("Core 2 Runtime linkage failed: " + exception.getClass().getSimpleName());
         }
     }
 
@@ -73,7 +98,10 @@ public final class PlexonCoreBridge implements CoreBridge {
 
     @Override
     public String mode() {
-        return compatible && ownsRegistration ? "CORE" : "STANDALONE";
+        if (!compatible || !ownsRegistration) {
+            return "STANDALONE";
+        }
+        return runtime.available() ? "CORE_RUNTIME" : "CORE_LEGACY";
     }
 
     @Override
@@ -90,6 +118,16 @@ public final class PlexonCoreBridge implements CoreBridge {
             return core.modules().find(MODULE_ID).map(ModuleDescriptor::detail).orElse(detail);
         }
         return detail;
+    }
+
+    @Override
+    public boolean runtimeAvailable() {
+        return compatible && runtime.available();
+    }
+
+    @Override
+    public CoreRuntime runtime() {
+        return runtime;
     }
 
     @Override

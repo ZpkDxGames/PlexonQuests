@@ -4,6 +4,20 @@ All notable changes to PlexonQuests are documented here.
 
 ## [Unreleased]
 
+## [3.3.0] - 2026-09-09
+
+- Migrated high-frequency block-break acquisition to the PlexonCore 2 Runtime while preserving a small PlexonQuests MONITOR gate for final cancellation correctness.
+- Added `AUTO`, `CORE`, `LOCAL`, and `SHADOW` runtime/origin modes with restart-only authority changes and safe fallback behavior.
+- Extracted source-independent block objective processing so Core and local acquisition share the same objective-interest, crop-maturity, filter, and progression semantics.
+- Adopted PlexonCore 2.0.1 shared block-origin authority with idempotent, persisted lazy import of the legacy PlexonQuests chunk-PDC provenance format.
+- Kept legacy local provenance data intact for rollback; Core import is additive and `UNKNOWN` remains fail-closed for natural/player-placed objective filters.
+- Disabled duplicate local provenance listeners/writes while Core is authoritative; LOCAL and SHADOW retain local provenance maintenance as required.
+- Added SHADOW comparison counters so local provenance can remain authoritative while Core results are measured without duplicate quest contribution.
+- Expanded `/quests diagnostics` with runtime mode, origin provider, runtime epoch, Core route/event/fallback counters, listener consolidation state, shadow mismatches, and origin-import state.
+- Preserved local block-place objective handling and all non-block objective listeners because the released Core 2 API does not expose those acquisition routes.
+- Updated Java 25/Paper 26.2 build and release workflows to provision the immutable PlexonCore 2.0.1 release by SHA-256, reject Core shading, verify the distribution, and enforce tag/project-version parity.
+- Added Core/runtime migration documentation, rollback guidance, and candidate-versus-stable release gates.
+
 ## [3.2.0] - 2026-09-09
 
 - Added per-player objective-interest indexes with type, material, and entity fast gates so irrelevant gameplay events bypass quest processing before expensive context or allocations are created.
