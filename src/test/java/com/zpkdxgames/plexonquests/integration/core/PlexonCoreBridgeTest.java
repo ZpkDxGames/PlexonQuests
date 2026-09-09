@@ -66,6 +66,27 @@ class PlexonCoreBridgeTest {
     }
 
     @Test
+    void coreTwoRegistersRuntimeMode() {
+        PlexonQuestsPlugin plugin = loadQuests();
+        CoreVersion version = CoreVersion.of(2, 0, "2.0.1");
+        ModuleRegistry modules = new ModuleRegistry(version);
+        IntegrationRegistry integrations = new IntegrationRegistry(Bukkit.getPluginManager());
+        integrations.refresh();
+        registerCoreApi(plugin, version, modules, integrations);
+
+        PlexonCoreBridge bridge = new PlexonCoreBridge(plugin);
+        bridge.registerStarting();
+
+        assertTrue(bridge.compatible());
+        assertTrue(bridge.runtimeAvailable());
+        assertEquals("CORE_RUNTIME", bridge.mode());
+        assertEquals(ModuleState.STARTING, modules.find(CoreBridge.MODULE_ID).orElseThrow().state());
+
+        bridge.unregister();
+        assertTrue(modules.find(CoreBridge.MODULE_ID).isEmpty());
+    }
+
+    @Test
     void coreThreeRegistersIncompatibleAndNeverBecomesReady() {
         PlexonQuestsPlugin plugin = loadQuests();
         CoreVersion version = CoreVersion.of(3, 0, "3.0.0");
