@@ -2,7 +2,10 @@ package com.zpkdxgames.plexonquests.integration.core;
 
 import com.zpkdxgames.plexonquests.config.ConfigManager;
 import com.zpkdxgames.plexonquests.objective.block.BlockObjectiveProcessor;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
@@ -51,6 +54,11 @@ public final class CoreOriginMigrator implements Listener, AutoCloseable {
         Chunk chunk = block.getChunk();
         ChunkKey key = new ChunkKey(chunk.getWorld().getUID(), chunk.getX(), chunk.getZ());
         Entry entry = entries.computeIfAbsent(key, ignored -> begin(chunk, key));
+        if (entry.status != Status.COMPLETE) {
+            // This event has already passed the final cancellation gate. If the legacy snapshot is
+            // imported later, this now-broken coordinate must not be reintroduced into Core.
+            entry.exclude(block);
+        }
         if (entry.status == Status.FAILED && Bukkit.getCurrentTick() >= entry.retryAtTick) {
             retry(chunk, key, entry);
         }
@@ -113,7 +121,7 @@ public final class CoreOriginMigrator implements Listener, AutoCloseable {
                         key.chunkZ,
                         SOURCE,
                         SOURCE_VERSION,
-                        entry.snapshot.positions())
+                        entry.importPositions())
                 .whenComplete((count, error) -> sync(() -> {
                     if (!isCurrent(key, entry)) return;
                     if (error != null) {
@@ -209,11 +217,23 @@ public final class CoreOriginMigrator implements Listener, AutoCloseable {
         private volatile LegacyOriginMigrationSource.Snapshot snapshot;
         private volatile Status status;
         private volatile long retryAtTick;
+        private final Set<CoreRuntime.BlockPosition> excluded = new HashSet<>();
 
         private Entry(LegacyOriginMigrationSource.Snapshot snapshot, Status status, long retryAtTick) {
             this.snapshot = snapshot;
             this.status = status;
             this.retryAtTick = retryAtTick;
+        }
+
+        private synchronized void exclude(Block block) {
+            excluded.add(new CoreRuntime.BlockPosition(block.getX(), block.getY(), block.getZ()));
+        }
+
+        private synchronized List<CoreRuntime.BlockPosition> importPositions() {
+            if (excluded.isEmpty()) {
+                return snapshot.positions();
+            }
+            return snapshot.positions().stream().filter(position -> !excluded.contains(position)).toList();
         }
     }
 
