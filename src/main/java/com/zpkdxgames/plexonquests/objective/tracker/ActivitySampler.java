@@ -14,7 +14,6 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
-import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -26,6 +25,7 @@ public final class ActivitySampler implements Listener, AutoCloseable {
     private final ProgressService progress;
     private final Map<UUID, Sample> samples = new HashMap<>();
     private BukkitTask task;
+    private long sampleGeneration;
 
     public ActivitySampler(JavaPlugin plugin, ConfigManager configs, ProgressService progress) {
         this.plugin = plugin;
@@ -36,12 +36,6 @@ public final class ActivitySampler implements Listener, AutoCloseable {
     public void start() {
         long interval = configs.snapshot().settings().tracking().travelSampleTicks();
         task = Bukkit.getScheduler().runTaskTimer(plugin, this::sample, interval, interval);
-        Bukkit.getOnlinePlayers().forEach(player -> samples.put(player.getUniqueId(), Sample.initial(player)));
-    }
-
-    @EventHandler(priority = EventPriority.MONITOR)
-    public void onJoin(PlayerJoinEvent event) {
-        samples.put(event.getPlayer().getUniqueId(), Sample.initial(event.getPlayer()));
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
@@ -59,21 +53,58 @@ public final class ActivitySampler implements Listener, AutoCloseable {
 
     private void sample() {
         long now = System.nanoTime();
+        long generation = ++sampleGeneration;
         var settings = configs.snapshot().settings().tracking();
         double maximumDelta = settings.travelMaximumDelta();
         long afkNanos = settings.afkTimeout().toNanos();
         long intervalTicks = settings.travelSampleTicks();
-        for (Player player : Bukkit.getOnlinePlayers()) {
-            Sample sample = samples.computeIfAbsent(player.getUniqueId(), ignored -> Sample.initial(player));
-            Location current = player.getLocation();
-            if (sample.worldId == null || !sample.worldId.equals(current.getWorld().getUID())) {
-                sample.reset(current, now);
+
+        for (UUID playerId : progress.interestedPlayerIds(ObjectiveType.TRAVEL_DISTANCE)) {
+            Player player = Bukkit.getPlayer(playerId);
+            if (player == null || !player.isOnline()) {
                 continue;
             }
-            double deltaSquared = distanceSquared(sample, current);
-            double delta = Math.sqrt(deltaSquared);
-            if (delta > 0.05D && delta <= maximumDelta) {
-                sample.lastActivityNanos = now;
+            boolean playTime = progress.interested(player, ObjectiveType.PLAY_TIME);
+            samplePlayer(player, true, playTime, now, generation, maximumDelta, afkNanos, intervalTicks);
+        }
+
+        for (UUID playerId : progress.interestedPlayerIds(ObjectiveType.PLAY_TIME)) {
+            Sample existing = samples.get(playerId);
+            if (existing != null && existing.generation == generation) {
+                continue;
+            }
+            Player player = Bukkit.getPlayer(playerId);
+            if (player == null || !player.isOnline()) {
+                continue;
+            }
+            samplePlayer(player, false, true, now, generation, maximumDelta, afkNanos, intervalTicks);
+        }
+
+        samples.entrySet().removeIf(entry -> entry.getValue().generation != generation);
+    }
+
+    private void samplePlayer(
+            Player player,
+            boolean travelInterested,
+            boolean playTimeInterested,
+            long now,
+            long generation,
+            double maximumDelta,
+            long afkNanos,
+            long intervalTicks) {
+        Sample sample = samples.computeIfAbsent(player.getUniqueId(), ignored -> Sample.initial(player));
+        sample.generation = generation;
+        Location current = player.getLocation();
+        if (sample.worldId == null || !sample.worldId.equals(current.getWorld().getUID())) {
+            sample.reset(current, now);
+            return;
+        }
+
+        double deltaSquared = distanceSquared(sample, current);
+        double delta = Math.sqrt(deltaSquared);
+        if (delta > 0.05D && delta <= maximumDelta) {
+            sample.lastActivityNanos = now;
+            if (travelInterested) {
                 sample.fractionalDistance += delta;
                 long wholeBlocks = (long) sample.fractionalDistance;
                 if (wholeBlocks > 0L) {
@@ -82,19 +113,21 @@ public final class ActivitySampler implements Listener, AutoCloseable {
                             ObjectiveType.TRAVEL_DISTANCE, wholeBlocks, player, movementType(player), false));
                 }
             }
-            if (now - sample.lastActivityNanos <= afkNanos) {
-                sample.fractionalSeconds += intervalTicks / 20D;
-                long seconds = (long) sample.fractionalSeconds;
-                if (seconds > 0L) {
-                    sample.fractionalSeconds -= seconds;
-                    progress.contribute(player, movementContribution(
-                            ObjectiveType.PLAY_TIME, seconds, player, movementType(player), false));
-                }
-            }
-            sample.x = current.getX();
-            sample.y = current.getY();
-            sample.z = current.getZ();
         }
+
+        if (playTimeInterested && now - sample.lastActivityNanos <= afkNanos) {
+            sample.fractionalSeconds += intervalTicks / 20D;
+            long seconds = (long) sample.fractionalSeconds;
+            if (seconds > 0L) {
+                sample.fractionalSeconds -= seconds;
+                progress.contribute(player, movementContribution(
+                        ObjectiveType.PLAY_TIME, seconds, player, movementType(player), false));
+            }
+        }
+
+        sample.x = current.getX();
+        sample.y = current.getY();
+        sample.z = current.getZ();
     }
 
     private static Contribution movementContribution(
@@ -147,6 +180,7 @@ public final class ActivitySampler implements Listener, AutoCloseable {
     public void close() {
         if (task != null) {
             task.cancel();
+            task = null;
         }
         samples.clear();
     }
@@ -159,6 +193,7 @@ public final class ActivitySampler implements Listener, AutoCloseable {
         private double fractionalDistance;
         private double fractionalSeconds;
         private long lastActivityNanos;
+        private long generation;
 
         private static Sample initial(Player player) {
             Sample sample = new Sample();
@@ -172,7 +207,7 @@ public final class ActivitySampler implements Listener, AutoCloseable {
             this.y = location.getY();
             this.z = location.getZ();
             this.lastActivityNanos = now;
+            this.fractionalDistance = 0D;
         }
     }
 }
-
