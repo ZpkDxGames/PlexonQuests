@@ -2,6 +2,11 @@ schema-version: 1
 
 locale: en_US
 
+# Core 2 runtime acquisition. AUTO uses the Core block runtime when available, while preserving
+# Core 1.x/standalone fallback. Switching authority modes requires a server restart.
+core-runtime:
+  mode: AUTO
+
 rotation:
   timezone: America/Sao_Paulo
   daily-reset: "04:00"
@@ -112,4 +117,3 @@ privacy:
   log-player-uuids: true
   log-player-names: true
   expose-database-path-in-player-errors: false
-
