@@ -101,8 +101,8 @@ public class PlexonQuestsPlugin extends JavaPlugin {
 
             coreRuntime = new CoreRuntimeCoordinator(this, configs, core);
             coreRuntime.start();
-            localOriginAuthority = !coreRuntime.coreOriginAuthoritative();
-            if (!localOriginAuthority) {
+            localOriginAuthority = coreRuntime.localOriginAuthoritative();
+            if (coreRuntime.originMigrationAvailable()) {
                 coreOriginMigrator = new CoreOriginMigrator(this, core.runtime(), configs);
             }
 
@@ -127,13 +127,12 @@ public class PlexonQuestsPlugin extends JavaPlugin {
             Bukkit.getOnlinePlayers().forEach(profiles::load);
             started = true;
             core.markReady("Quest engine ready; block acquisition=" + coreRuntime.acquisitionMode()
-                    + "; origin=" + (localOriginAuthority ? "LOCAL" : "CORE"));
+                    + "; origin=" + coreRuntime.originProvider());
 
             getLogger().info("PlexonQuests " + getPluginMeta().getVersion() + " enabled with "
                     + initial.registry().quests().size() + " quests, " + initial.registry().pools().size()
                     + " pools, and " + initial.registry().errorCount() + " quarantined definition error(s). Runtime: "
-                    + coreRuntime.acquisitionMode() + "; origin authority: "
-                    + (localOriginAuthority ? "LOCAL" : "CORE") + ".");
+                    + coreRuntime.acquisitionMode() + "; origin provider: " + coreRuntime.originProvider() + ".");
         } catch (Exception exception) {
             if (core != null) {
                 core.markFailed("Quest startup failed: " + exception.getClass().getSimpleName());
@@ -151,7 +150,8 @@ public class PlexonQuestsPlugin extends JavaPlugin {
                 new CoreObjectiveListener(this, progress, origins, configs, coreRuntime, coreOriginMigrator), this);
         if (localOriginAuthority) {
             manager.registerEvents(origins, this);
-        } else if (coreOriginMigrator != null) {
+        }
+        if (coreOriginMigrator != null) {
             manager.registerEvents(coreOriginMigrator, this);
         }
         manager.registerEvents(new PlayerLifecycleListener(profiles, progress, rerolls), this);
@@ -173,6 +173,8 @@ public class PlexonQuestsPlugin extends JavaPlugin {
                 storage,
                 integrations,
                 origins,
+                coreRuntime,
+                coreOriginMigrator,
                 text,
                 configExecutor);
         command.setExecutor(handler);
