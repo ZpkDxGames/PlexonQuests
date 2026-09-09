@@ -20,6 +20,7 @@ import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -38,6 +39,7 @@ public final class ProgressService {
     private final ConfigManager configs;
     private final Map<UUID, PlayerObjectiveIndex> indexes = new ConcurrentHashMap<>();
     private final Map<UUID, SourceTokens> sourceTokens = new ConcurrentHashMap<>();
+    private final EnumMap<ObjectiveType, Set<UUID>> interestedPlayers = new EnumMap<>(ObjectiveType.class);
     private volatile ProgressObserver observer = (player, assignment, result) -> {};
 
     public ProgressService(
@@ -49,6 +51,9 @@ public final class ProgressService {
         this.profiles = profiles;
         this.storage = storage;
         this.configs = configs;
+        for (ObjectiveType type : ObjectiveType.values()) {
+            interestedPlayers.put(type, ConcurrentHashMap.newKeySet());
+        }
     }
 
     public void observer(ProgressObserver observer) {
@@ -56,12 +61,17 @@ public final class ProgressService {
     }
 
     public void reindex(PlayerProfile profile) {
-        indexes.put(profile.playerId(), PlayerObjectiveIndex.build(profile));
+        PlayerObjectiveIndex index = PlayerObjectiveIndex.build(profile);
+        indexes.put(profile.playerId(), index);
+        updateInterestedPlayers(profile.playerId(), index);
     }
 
     public void removeIndex(UUID playerId) {
         indexes.remove(playerId);
         sourceTokens.remove(playerId);
+        for (Set<UUID> players : interestedPlayers.values()) {
+            players.remove(playerId);
+        }
     }
 
     /**
@@ -83,6 +93,14 @@ public final class ProgressService {
     public boolean interested(Player player, ObjectiveType type, EntityType entityType) {
         PlayerObjectiveIndex index = indexes.get(player.getUniqueId());
         return index != null && index.interested(type, entityType);
+    }
+
+    /**
+     * Read-only-by-contract iterable used by periodic samplers so they can visit only players
+     * with active objectives of the requested type instead of scanning every online player.
+     */
+    public Iterable<UUID> interestedPlayerIds(ObjectiveType type) {
+        return interestedPlayers.get(type);
     }
 
     /** Returns whether a matching material candidate actually needs block-origin context. */
@@ -224,6 +242,17 @@ public final class ProgressService {
             profiles.profile(player).ifPresent(this::reindex);
         }
         return acceptedAny[0];
+    }
+
+    private void updateInterestedPlayers(UUID playerId, PlayerObjectiveIndex index) {
+        for (ObjectiveType type : ObjectiveType.values()) {
+            Set<UUID> players = interestedPlayers.get(type);
+            if (index.interested(type)) {
+                players.add(playerId);
+            } else {
+                players.remove(playerId);
+            }
+        }
     }
 
     private static Contribution withoutSourceToken(Contribution value) {
