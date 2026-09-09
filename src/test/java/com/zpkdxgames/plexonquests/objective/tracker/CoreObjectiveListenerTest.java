@@ -80,6 +80,23 @@ class CoreObjectiveListenerTest {
     }
 
     @Test
+    void cancelledBlockBreakNeverContributesOrMutatesLocalOrigin() {
+        ProgressService progress = mock(ProgressService.class);
+        BlockOriginService origins = mock(BlockOriginService.class);
+        CoreObjectiveListener listener = listener(progress, origins);
+        BlockBreakEvent event = mock(BlockBreakEvent.class);
+        when(event.isCancelled()).thenReturn(true);
+
+        listener.onBreak(event);
+
+        verify(progress, never()).contribute(
+                org.mockito.ArgumentMatchers.any(Player.class),
+                org.mockito.ArgumentMatchers.any(Contribution.class));
+        verify(origins, never()).markBroken(org.mockito.ArgumentMatchers.any(Block.class));
+        verify(origins, never()).origin(org.mockito.ArgumentMatchers.any(Block.class));
+    }
+
+    @Test
     void craftWithoutInterestReturnsBeforeInventoryCapacityScan() {
         ProgressService progress = mock(ProgressService.class);
         CoreObjectiveListener listener = listener(progress, mock(BlockOriginService.class));
