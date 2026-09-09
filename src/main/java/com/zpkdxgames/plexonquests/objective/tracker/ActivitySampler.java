@@ -34,8 +34,16 @@ public final class ActivitySampler implements Listener, AutoCloseable {
     }
 
     public void start() {
+        if (task != null) {
+            task.cancel();
+        }
         long interval = configs.snapshot().settings().tracking().travelSampleTicks();
         task = Bukkit.getScheduler().runTaskTimer(plugin, this::sample, interval, interval);
+    }
+
+    /** Restarts only the sampler schedule; accumulated travel/play-time fractions are preserved. */
+    public void restart() {
+        start();
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
