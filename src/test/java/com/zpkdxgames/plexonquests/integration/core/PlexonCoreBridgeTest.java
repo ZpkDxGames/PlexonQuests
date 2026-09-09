@@ -29,9 +29,7 @@ class PlexonCoreBridgeTest {
 
     @AfterEach
     void stopServer() {
-        if (server != null) {
-            MockBukkit.unmock();
-        }
+        if (server != null) MockBukkit.unmock();
     }
 
     @Test
@@ -42,46 +40,37 @@ class PlexonCoreBridgeTest {
         IntegrationRegistry integrations = new IntegrationRegistry(Bukkit.getPluginManager());
         integrations.refresh();
         registerCoreApi(plugin, version, modules, integrations);
-
         PlexonCoreBridge bridge = new PlexonCoreBridge(plugin);
         bridge.registerStarting();
-
         assertTrue(bridge.compatible());
         assertFalse(bridge.runtimeAvailable());
         assertEquals("CORE_LEGACY", bridge.mode());
         assertEquals(ModuleState.STARTING, modules.find(CoreBridge.MODULE_ID).orElseThrow().state());
         assertEquals(CoreBridge.ProviderHint.MISSING, bridge.providerHint("PLEXON_RANKS"));
-
         bridge.markReady("ready");
         assertEquals(ModuleState.READY, modules.find(CoreBridge.MODULE_ID).orElseThrow().state());
-
         bridge.markDegraded("optional provider unavailable");
         assertEquals(ModuleState.DEGRADED, modules.find(CoreBridge.MODULE_ID).orElseThrow().state());
-
         bridge.markFailed("storage failed");
         assertEquals(ModuleState.FAILED, modules.find(CoreBridge.MODULE_ID).orElseThrow().state());
-
         bridge.unregister();
         assertTrue(modules.find(CoreBridge.MODULE_ID).isEmpty());
     }
 
     @Test
-    void coreTwoRegistersRuntimeMode() {
+    void coreTwoPointZeroPointTwoRegistersRuntimeMode() {
         PlexonQuestsPlugin plugin = loadQuests();
-        CoreVersion version = CoreVersion.of(2, 0, "2.0.1");
+        CoreVersion version = CoreVersion.of(2, 0, "2.0.2");
         ModuleRegistry modules = new ModuleRegistry(version);
         IntegrationRegistry integrations = new IntegrationRegistry(Bukkit.getPluginManager());
         integrations.refresh();
         registerCoreApi(plugin, version, modules, integrations);
-
         PlexonCoreBridge bridge = new PlexonCoreBridge(plugin);
         bridge.registerStarting();
-
         assertTrue(bridge.compatible());
         assertTrue(bridge.runtimeAvailable());
         assertEquals("CORE_RUNTIME", bridge.mode());
         assertEquals(ModuleState.STARTING, modules.find(CoreBridge.MODULE_ID).orElseThrow().state());
-
         bridge.unregister();
         assertTrue(modules.find(CoreBridge.MODULE_ID).isEmpty());
     }
@@ -94,18 +83,14 @@ class PlexonCoreBridgeTest {
         IntegrationRegistry integrations = new IntegrationRegistry(Bukkit.getPluginManager());
         integrations.refresh();
         registerCoreApi(plugin, version, modules, integrations);
-
         PlexonCoreBridge bridge = new PlexonCoreBridge(plugin);
         bridge.registerStarting();
-
         assertFalse(bridge.compatible());
         assertFalse(bridge.runtimeAvailable());
         assertEquals("STANDALONE", bridge.mode());
         assertEquals(ModuleState.INCOMPATIBLE, modules.find(CoreBridge.MODULE_ID).orElseThrow().state());
-
         bridge.markReady("must not override incompatibility");
         assertEquals(ModuleState.INCOMPATIBLE, modules.find(CoreBridge.MODULE_ID).orElseThrow().state());
-
         bridge.unregister();
         assertTrue(modules.find(CoreBridge.MODULE_ID).isEmpty());
     }
@@ -118,27 +103,16 @@ class PlexonCoreBridgeTest {
         IntegrationRegistry integrations = new IntegrationRegistry(Bukkit.getPluginManager());
         integrations.refresh();
         registerCoreApi(plugin, version, modules, integrations);
-
         Plugin other = mock(Plugin.class);
         ModuleDescriptor existing = new ModuleDescriptor(
-                CoreBridge.MODULE_ID,
-                "Other Quests",
-                "OtherPlugin",
-                "9.9.9",
-                other,
-                ModuleVersionRange.parse(CoreBridge.SUPPORTED_API_RANGE),
-                Set.of("other"),
-                ModuleState.READY,
-                "Already registered",
-                Instant.now());
+                CoreBridge.MODULE_ID, "Other Quests", "OtherPlugin", "9.9.9", other,
+                ModuleVersionRange.parse(CoreBridge.SUPPORTED_API_RANGE), Set.of("other"), ModuleState.READY,
+                "Already registered", Instant.now());
         assertTrue(modules.register(existing).success());
-
         PlexonCoreBridge bridge = new PlexonCoreBridge(plugin);
         bridge.registerStarting();
-
         assertEquals("STANDALONE", bridge.mode());
         assertEquals(other, modules.find(CoreBridge.MODULE_ID).orElseThrow().plugin());
-
         bridge.unregister();
         assertEquals(other, modules.find(CoreBridge.MODULE_ID).orElseThrow().plugin());
     }
@@ -148,10 +122,7 @@ class PlexonCoreBridgeTest {
         return MockBukkit.load(PlexonQuestsPlugin.class);
     }
 
-    private static void registerCoreApi(
-            PlexonQuestsPlugin plugin,
-            CoreVersion version,
-            ModuleRegistry modules,
+    private static void registerCoreApi(PlexonQuestsPlugin plugin, CoreVersion version, ModuleRegistry modules,
             IntegrationRegistry integrations) {
         PlexonCoreAPI api = mock(PlexonCoreAPI.class);
         when(api.version()).thenReturn(version);
