@@ -3,7 +3,6 @@ name: Release
 on:
   push:
     tags: ['v*']
-    branches: ['release/**']
 
 permissions:
   contents: write
@@ -22,45 +21,52 @@ jobs:
         id: project
         shell: bash
         run: echo "version=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)" >> "$GITHUB_OUTPUT"
-      - name: Provision PlexonCore 1.0.0 API
+      - name: Enforce tag/version parity
+        shell: bash
+        run: test "${GITHUB_REF_NAME}" = "v${{ steps.project.outputs.version }}"
+      - name: Provision PlexonCore 2.0.1 API
         shell: bash
         run: |
           set -euo pipefail
-          core_jar="${RUNNER_TEMP}/PlexonCore-1.0.0.jar"
+          core_jar="${RUNNER_TEMP}/PlexonCore-2.0.1.jar"
           curl --fail --location --silent --show-error \
             --output "${core_jar}" \
-            "https://github.com/ZpkDxGames/PlexonCore/releases/download/v1.0.0/PlexonCore-1.0.0.jar"
-          echo "4abce6de93293e21b31cb874734430d5bdc77de17a4c3b98fd6a9006e1f13018  ${core_jar}" | sha256sum --check
+            "https://github.com/ZpkDxGames/PlexonCore/releases/download/v2.0.1/PlexonCore-2.0.1.jar"
+          echo "d2f8348b800a4668dc1077c9bf49b5c1886f85d3f0671137faca0c2df4af84ac  ${core_jar}" | sha256sum --check
           mvn -B -ntp org.apache.maven.plugins:maven-install-plugin:3.1.4:install-file \
             -Dfile="${core_jar}" \
             -DgroupId=com.zpkdxgames \
             -DartifactId=PlexonCore \
-            -Dversion=1.0.0 \
+            -Dversion=2.0.1 \
             -Dpackaging=jar \
             -DgeneratePom=true
-      - run: mvn -B -ntp clean verify
+      - name: Verify exact tagged source
+        run: mvn -B -ntp clean verify
       - name: Verify distribution
         shell: bash
         run: |
           set -euo pipefail
           jar_path="target/PlexonQuests-${{ steps.project.outputs.version }}.jar"
-          test -f "${jar_path}"
+          test -s "${jar_path}"
           jar tf "${jar_path}" > target/jar-contents.txt
           grep -qx 'plugin.yml' target/jar-contents.txt
           grep -qx 'org/sqlite/JDBC.class' target/jar-contents.txt
+          grep -q '^com/zpkdxgames/plexonquests/integration/core/PlexonCore2Runtime.class$' target/jar-contents.txt
           if grep -q '^com/zpkdxgames/plexoncore/' target/jar-contents.txt; then
             echo "PlexonCore runtime classes must not be shaded into PlexonQuests" >&2
             exit 1
           fi
       - name: Checksums
         working-directory: target
-        run: sha256sum PlexonQuests-*.jar > SHA256SUMS.txt
+        run: |
+          sha256sum PlexonQuests-${{ steps.project.outputs.version }}.jar > SHA256SUMS.txt
+          sha256sum --check SHA256SUMS.txt
       - uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('v{0}', steps.project.outputs.version) }}
-          target_commitish: ${{ startsWith(github.ref, 'refs/tags/') && github.sha || 'main' }}
+          tag_name: ${{ github.ref_name }}
+          target_commitish: ${{ github.sha }}
           name: PlexonQuests ${{ steps.project.outputs.version }}
           generate_release_notes: true
           files: |
-            target/PlexonQuests-*.jar
+            target/PlexonQuests-${{ steps.project.outputs.version }}.jar
             target/SHA256SUMS.txt
