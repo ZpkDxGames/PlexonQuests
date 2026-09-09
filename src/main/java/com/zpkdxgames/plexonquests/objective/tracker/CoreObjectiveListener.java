@@ -2,6 +2,7 @@ package com.zpkdxgames.plexonquests.objective.tracker;
 
 import com.zpkdxgames.plexonquests.config.ConfigManager;
 import com.zpkdxgames.plexonquests.config.ConfigSnapshot;
+import com.zpkdxgames.plexonquests.integration.core.CoreOriginMigrator;
 import com.zpkdxgames.plexonquests.integration.core.CoreRuntime;
 import com.zpkdxgames.plexonquests.integration.core.CoreRuntimeCoordinator;
 import com.zpkdxgames.plexonquests.objective.Contribution;
@@ -47,6 +48,7 @@ public final class CoreObjectiveListener implements Listener {
     private final ConfigManager configs;
     private final BlockObjectiveProcessor blockProcessor;
     private final CoreRuntimeCoordinator coreRuntime;
+    private final CoreOriginMigrator coreOrigins;
     private final NamespacedKey spawnReasonKey;
     private volatile ConfigSnapshot spawnReasonSnapshot;
     private volatile boolean spawnReasonTracking = true;
@@ -56,12 +58,14 @@ public final class CoreObjectiveListener implements Listener {
             ProgressService progress,
             BlockOriginService origins,
             ConfigManager configs,
-            CoreRuntimeCoordinator coreRuntime) {
+            CoreRuntimeCoordinator coreRuntime,
+            CoreOriginMigrator coreOrigins) {
         this.progress = progress;
         this.origins = origins;
         this.configs = configs;
         this.blockProcessor = new BlockObjectiveProcessor(progress);
         this.coreRuntime = coreRuntime;
+        this.coreOrigins = coreOrigins;
         this.spawnReasonKey = new NamespacedKey(plugin, "spawn_reason");
     }
 
@@ -69,13 +73,22 @@ public final class CoreObjectiveListener implements Listener {
             JavaPlugin plugin,
             ProgressService progress,
             BlockOriginService origins,
+            ConfigManager configs,
+            CoreRuntimeCoordinator coreRuntime) {
+        this(plugin, progress, origins, configs, coreRuntime, null);
+    }
+
+    public CoreObjectiveListener(
+            JavaPlugin plugin,
+            ProgressService progress,
+            BlockOriginService origins,
             ConfigManager configs) {
-        this(plugin, progress, origins, configs, null);
+        this(plugin, progress, origins, configs, null, null);
     }
 
     /** Compatibility constructor retained for isolated listener tests. */
     public CoreObjectiveListener(JavaPlugin plugin, ProgressService progress, BlockOriginService origins) {
-        this(plugin, progress, origins, null, null);
+        this(plugin, progress, origins, null, null, null);
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
@@ -94,12 +107,10 @@ public final class CoreObjectiveListener implements Listener {
                     material,
                     () -> mature(event),
                     () -> {
-                        if (coreFact != null) {
-                            return coreRuntime.origin(coreFact);
-                        }
                         if (coreOrigin) {
-                            // Core mode must fail closed if the shared event fact is unexpectedly missing.
-                            return BlockObjectiveProcessor.OriginState.UNKNOWN;
+                            return coreOrigins == null
+                                    ? BlockObjectiveProcessor.OriginState.UNKNOWN
+                                    : coreOrigins.resolve(event.getBlock(), coreFact);
                         }
                         BlockOriginService.OriginResult local = origins.origin(event.getBlock());
                         return local.known()
