@@ -26,15 +26,9 @@ public final class ObjectiveMatcher {
         if (contribution.gameMode() == GameMode.CREATIVE && !global.creativeCounts()) {
             return 0L;
         }
+
         ObjectiveFilters filters = objective.filters();
         if (!filters.gameModes().isEmpty() && !filters.gameModes().contains(contribution.gameMode())) {
-            return 0L;
-        }
-        if (!filters.worlds().isEmpty() && !filters.worlds().contains(contribution.world())) {
-            return 0L;
-        }
-        if (!filters.worldEnvironments().isEmpty()
-                && !filters.worldEnvironments().contains(contribution.worldEnvironment())) {
             return 0L;
         }
         if (!filters.materials().isEmpty()
@@ -49,12 +43,11 @@ public final class ObjectiveMatcher {
                 && (contribution.entityType() == null || !filters.entityTypes().contains(contribution.entityType()))) {
             return 0L;
         }
-        if (!filters.damageCauses().isEmpty()
-                && (contribution.damageCause() == null || !filters.damageCauses().contains(contribution.damageCause()))) {
+        if (!filters.worlds().isEmpty() && !filters.worlds().contains(contribution.world())) {
             return 0L;
         }
-        if (!filters.spawnReasons().isEmpty()
-                && (contribution.spawnReason() == null || !filters.spawnReasons().contains(contribution.spawnReason()))) {
+        if (!filters.worldEnvironments().isEmpty()
+                && !filters.worldEnvironments().contains(contribution.worldEnvironment())) {
             return 0L;
         }
         if (global.originMode() != BlockOriginMode.OFF) {
@@ -77,6 +70,14 @@ public final class ObjectiveMatcher {
             return 0L;
         }
         if (filters.excludeTeleports() && contribution.teleport()) {
+            return 0L;
+        }
+        if (!filters.damageCauses().isEmpty()
+                && (contribution.damageCause() == null || !filters.damageCauses().contains(contribution.damageCause()))) {
+            return 0L;
+        }
+        if (!filters.spawnReasons().isEmpty()
+                && (contribution.spawnReason() == null || !filters.spawnReasons().contains(contribution.spawnReason()))) {
             return 0L;
         }
         if (!filters.movementTypes().isEmpty()
