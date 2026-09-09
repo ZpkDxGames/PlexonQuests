@@ -12,9 +12,9 @@ import com.zpkdxgames.plexonquests.service.BlockOriginService;
 import com.zpkdxgames.plexonquests.service.ProgressService;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
+import org.bukkit.entity.EntityType;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
-import org.bukkit.entity.EntityType;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.inventory.CraftItemEvent;
@@ -22,10 +22,22 @@ import org.bukkit.event.inventory.InventoryAction;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.Recipe;
-import org.bukkit.plugin.java.JavaPlugin;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockbukkit.mockbukkit.MockBukkit;
 
 class CoreObjectiveListenerTest {
+    @BeforeEach
+    void setUp() {
+        MockBukkit.mock();
+    }
+
+    @AfterEach
+    void tearDown() {
+        MockBukkit.unmock();
+    }
+
     @Test
     void brewingExtractionCountsOnlyItemsActuallyRemoved() {
         ItemStack clicked = mock(ItemStack.class);
@@ -119,8 +131,6 @@ class CoreObjectiveListenerTest {
     }
 
     private static CoreObjectiveListener listener(ProgressService progress, BlockOriginService origins) {
-        JavaPlugin plugin = mock(JavaPlugin.class);
-        when(plugin.getName()).thenReturn("PlexonQuests");
-        return new CoreObjectiveListener(plugin, progress, origins);
+        return new CoreObjectiveListener(MockBukkit.createMockPlugin("PlexonQuestsTest"), progress, origins);
     }
 }
