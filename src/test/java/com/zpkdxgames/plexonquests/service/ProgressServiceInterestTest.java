@@ -19,8 +19,8 @@ import java.util.Set;
 import java.util.UUID;
 import org.bukkit.Material;
 import org.bukkit.entity.EntityType;
-import org.bukkit.event.entity.CreatureSpawnEvent;
 import org.bukkit.entity.Player;
+import org.bukkit.event.entity.CreatureSpawnEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.junit.jupiter.api.Test;
 
@@ -104,6 +104,21 @@ class ProgressServiceInterestTest {
     }
 
     @Test
+    void interestedPlayerRegistryTracksReindexAndCleanup() {
+        QuestAssignment assignment = assignment(
+                ObjectiveType.TRAVEL_DISTANCE, Set.of(), Set.of(), OriginPolicy.ANY, false, Set.of(), false, false);
+        Harness harness = harness(List.of(assignment));
+        UUID playerId = harness.player().getUniqueId();
+
+        assertTrue(contains(harness.service().interestedPlayerIds(ObjectiveType.TRAVEL_DISTANCE), playerId));
+        assertFalse(contains(harness.service().interestedPlayerIds(ObjectiveType.PLAY_TIME), playerId));
+
+        harness.service().removeIndex(playerId);
+
+        assertFalse(contains(harness.service().interestedPlayerIds(ObjectiveType.TRAVEL_DISTANCE), playerId));
+    }
+
+    @Test
     void requirementProfilesExposeOnlyExpensiveContextActuallyNeeded() {
         QuestAssignment blockAssignment = assignment(
                 ObjectiveType.BREAK_BLOCK,
@@ -135,6 +150,15 @@ class ProgressServiceInterestTest {
                 harness.player(), ObjectiveType.KILL_ENTITY, EntityType.ZOMBIE));
         assertFalse(harness.service().requiresSpawnReason(
                 harness.player(), ObjectiveType.KILL_ENTITY, EntityType.COW));
+    }
+
+    private static boolean contains(Iterable<UUID> values, UUID expected) {
+        for (UUID value : values) {
+            if (expected.equals(value)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static Harness harness(List<QuestAssignment> assignments) {
