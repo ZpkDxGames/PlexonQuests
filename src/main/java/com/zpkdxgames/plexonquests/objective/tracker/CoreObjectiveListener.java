@@ -101,6 +101,7 @@ public final class CoreObjectiveListener implements Listener {
         Player player = event.getPlayer();
         Material material = event.getBlock().getType();
         boolean coreOrigin = coreRuntime != null && coreRuntime.coreOriginAuthoritative();
+        boolean localOrigin = coreRuntime == null || coreRuntime.localOriginAuthoritative();
         try {
             blockProcessor.breakBlock(
                     player,
@@ -112,19 +113,32 @@ public final class CoreObjectiveListener implements Listener {
                                     ? BlockObjectiveProcessor.OriginState.UNKNOWN
                                     : coreOrigins.resolve(event.getBlock(), coreFact);
                         }
-                        BlockOriginService.OriginResult local = origins.origin(event.getBlock());
-                        return local.known()
-                                ? (local.natural()
-                                        ? BlockObjectiveProcessor.OriginState.NATURAL
-                                        : BlockObjectiveProcessor.OriginState.PLAYER_PLACED)
-                                : BlockObjectiveProcessor.OriginState.UNKNOWN;
+
+                        BlockObjectiveProcessor.OriginState local = localOrigin(event);
+                        if (coreRuntime != null && coreRuntime.shadowMode()) {
+                            BlockObjectiveProcessor.OriginState coreState = coreOrigins == null
+                                    ? coreRuntime.origin(coreFact)
+                                    : coreOrigins.resolve(event.getBlock(), coreFact);
+                            coreRuntime.recordShadowComparison(local, coreState);
+                        }
+                        return local;
                     });
         } finally {
-            if (!coreOrigin) {
-                // Local provenance remains authoritative in standalone/Core legacy/forced LOCAL modes.
+            if (localOrigin) {
+                // LOCAL and SHADOW keep PlexonQuests provenance authoritative and maintained.
                 origins.markBroken(event.getBlock());
             }
         }
+    }
+
+    private BlockObjectiveProcessor.OriginState localOrigin(BlockBreakEvent event) {
+        BlockOriginService.OriginResult local = origins.origin(event.getBlock());
+        if (!local.known()) {
+            return BlockObjectiveProcessor.OriginState.UNKNOWN;
+        }
+        return local.natural()
+                ? BlockObjectiveProcessor.OriginState.NATURAL
+                : BlockObjectiveProcessor.OriginState.PLAYER_PLACED;
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
