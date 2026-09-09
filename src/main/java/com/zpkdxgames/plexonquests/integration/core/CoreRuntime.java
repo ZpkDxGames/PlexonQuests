@@ -1,7 +1,9 @@
 package com.zpkdxgames.plexonquests.integration.core;
 
+import java.util.Collection;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 import org.bukkit.Material;
 
@@ -20,6 +22,25 @@ public interface CoreRuntime {
             Set<Material> materials,
             boolean requiresNaturalOrigin,
             Consumer<BlockFact> handler);
+
+    default boolean originImportAvailable() {
+        return false;
+    }
+
+    default CompletableFuture<Boolean> originImportComplete(
+            UUID worldId, int chunkX, int chunkZ, String source, int sourceVersion) {
+        return CompletableFuture.failedFuture(new IllegalStateException("Core origin import is unavailable"));
+    }
+
+    default CompletableFuture<Integer> importPlayerPlacedChunk(
+            UUID worldId,
+            int chunkX,
+            int chunkZ,
+            String source,
+            int sourceVersion,
+            Collection<BlockPosition> positions) {
+        return CompletableFuture.failedFuture(new IllegalStateException("Core origin import is unavailable"));
+    }
 
     static CoreRuntime unavailable(String detail) {
         return new CoreRuntime() {
@@ -60,6 +81,8 @@ public interface CoreRuntime {
             Material material,
             OriginState origin,
             long gameTick) {}
+
+    record BlockPosition(int x, int y, int z) {}
 
     enum OriginState {
         NATURAL,
