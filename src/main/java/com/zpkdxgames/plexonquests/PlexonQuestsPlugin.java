@@ -4,6 +4,7 @@ import com.zpkdxgames.plexonquests.api.PlexonQuestsAPI;
 import com.zpkdxgames.plexonquests.api.PlexonQuestsAPIImpl;
 import com.zpkdxgames.plexonquests.command.QuestCommand;
 import com.zpkdxgames.plexonquests.config.ConfigManager;
+import com.zpkdxgames.plexonquests.config.ConfigSnapshot;
 import com.zpkdxgames.plexonquests.gui.MenuListener;
 import com.zpkdxgames.plexonquests.gui.MenuService;
 import com.zpkdxgames.plexonquests.integration.IntegrationManager;
@@ -28,6 +29,8 @@ import com.zpkdxgames.plexonquests.service.ProfileService;
 import com.zpkdxgames.plexonquests.service.ProgressService;
 import com.zpkdxgames.plexonquests.service.QuestEligibilityService;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ExecutorService;
@@ -39,6 +42,7 @@ import org.bukkit.command.PluginCommand;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.ServicePriority;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.scheduler.BukkitTask;
 
 public class PlexonQuestsPlugin extends JavaPlugin {
     private ExecutorService configExecutor;
@@ -54,6 +58,9 @@ public class PlexonQuestsPlugin extends JavaPlugin {
     private ActivitySampler activity;
     private PlexonQuestsExpansion expansion;
     private CoreBridge core;
+    private final List<BukkitTask> maintenanceTasks = new ArrayList<>();
+    private BukkitTask configWatchTask;
+    private ConfigSnapshot runtimeScheduleSnapshot;
     private boolean started;
 
     @Override
@@ -101,6 +108,7 @@ public class PlexonQuestsPlugin extends JavaPlugin {
             origins.loadExistingChunks();
             configureProfiles(text);
             scheduleMaintenance();
+            startRuntimeConfigWatcher();
             Bukkit.getOnlinePlayers().forEach(profiles::load);
             started = true;
             core.markReady("Quest engine ready; definitions loaded successfully");
@@ -122,7 +130,7 @@ public class PlexonQuestsPlugin extends JavaPlugin {
     private void registerListeners(RewardService rewards, TextService text, MenuService menus) {
         var manager = Bukkit.getPluginManager();
         manager.registerEvents(new MenuListener(configs), this);
-        manager.registerEvents(new CoreObjectiveListener(this, progress, origins), this);
+        manager.registerEvents(new CoreObjectiveListener(this, progress, origins, configs), this);
         manager.registerEvents(origins, this);
         manager.registerEvents(new PlayerLifecycleListener(profiles, progress, rerolls), this);
         manager.registerEvents(new QuestNotificationListener(profiles, rewards, text), this);
@@ -188,29 +196,80 @@ public class PlexonQuestsPlugin extends JavaPlugin {
         });
     }
 
+    private void startRuntimeConfigWatcher() {
+        runtimeScheduleSnapshot = configs.snapshot();
+        if (configWatchTask != null) {
+            configWatchTask.cancel();
+        }
+        configWatchTask = Bukkit.getScheduler().runTaskTimer(this, this::refreshRuntimeConfig, 20L, 20L);
+    }
+
+    private void refreshRuntimeConfig() {
+        ConfigSnapshot snapshot = configs.snapshot();
+        if (snapshot == runtimeScheduleSnapshot) {
+            return;
+        }
+        runtimeScheduleSnapshot = snapshot;
+
+        integrations.detect();
+        profiles.onlineProfiles().forEach(profile -> {
+            profiles.refreshRankCategory(profile);
+            progress.reindex(profile);
+        });
+        if (activity != null) {
+            activity.restart();
+        }
+        scheduleMaintenance();
+    }
+
     private void scheduleMaintenance() {
+        cancelMaintenanceTasks();
+
         long flushTicks = ticks(configs.snapshot().settings().storage().flushInterval(), 20L);
-        Bukkit.getScheduler().runTaskTimerAsynchronously(this, () -> storage.flushDirty().exceptionally(failure -> {
-            getLogger().log(Level.WARNING, "Scheduled quest progress flush failed", failure);
-            return 0;
-        }), flushTicks, flushTicks);
+        maintenanceTasks.add(Bukkit.getScheduler().runTaskTimerAsynchronously(
+                this,
+                () -> storage.flushDirty().exceptionally(failure -> {
+                    getLogger().log(Level.WARNING, "Scheduled quest progress flush failed", failure);
+                    return 0;
+                }),
+                flushTicks,
+                flushTicks));
 
         long checkpointTicks = ticks(configs.snapshot().settings().storage().checkpointInterval(), 1_200L);
-        Bukkit.getScheduler().runTaskTimerAsynchronously(this, () -> storage.checkpoint().exceptionally(failure -> {
-            getLogger().log(Level.WARNING, "Scheduled SQLite checkpoint failed", failure);
-            return null;
-        }), checkpointTicks, checkpointTicks);
+        maintenanceTasks.add(Bukkit.getScheduler().runTaskTimerAsynchronously(
+                this,
+                () -> storage.checkpoint().exceptionally(failure -> {
+                    getLogger().log(Level.WARNING, "Scheduled SQLite checkpoint failed", failure);
+                    return null;
+                }),
+                checkpointTicks,
+                checkpointTicks));
 
-        Bukkit.getScheduler().runTaskTimerAsynchronously(this, () -> storage.maintenance().exceptionally(failure -> {
-            getLogger().log(Level.WARNING, "Scheduled quest storage maintenance failed", failure);
-            return null;
-        }), 1_728_000L, 1_728_000L);
+        maintenanceTasks.add(Bukkit.getScheduler().runTaskTimerAsynchronously(
+                this,
+                () -> storage.maintenance().exceptionally(failure -> {
+                    getLogger().log(Level.WARNING, "Scheduled quest storage maintenance failed", failure);
+                    return null;
+                }),
+                1_728_000L,
+                1_728_000L));
 
-        Bukkit.getScheduler().runTaskTimer(this, () -> Bukkit.getOnlinePlayers().forEach(player ->
-                profiles.profile(player).ifPresent(profile -> {
-                    profiles.refreshRankCategory(profile);
-                    rotations.ensure(player, profile);
-                })), 1_200L, 1_200L);
+        maintenanceTasks.add(Bukkit.getScheduler().runTaskTimer(
+                this,
+                () -> profiles.onlineProfiles().forEach(profile -> {
+                    Player player = Bukkit.getPlayer(profile.playerId());
+                    if (player != null && player.isOnline()) {
+                        profiles.refreshRankCategory(profile);
+                        rotations.ensure(player, profile);
+                    }
+                }),
+                1_200L,
+                1_200L));
+    }
+
+    private void cancelMaintenanceTasks() {
+        maintenanceTasks.forEach(BukkitTask::cancel);
+        maintenanceTasks.clear();
     }
 
     private static long ticks(Duration duration, long minimum) {
@@ -223,6 +282,12 @@ public class PlexonQuestsPlugin extends JavaPlugin {
     }
 
     private void shutdown() {
+        if (configWatchTask != null) {
+            configWatchTask.cancel();
+            configWatchTask = null;
+        }
+        cancelMaintenanceTasks();
+        runtimeScheduleSnapshot = null;
         if (expansion != null) {
             expansion.unregister();
             expansion = null;
