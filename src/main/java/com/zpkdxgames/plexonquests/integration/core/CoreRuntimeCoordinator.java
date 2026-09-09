@@ -17,10 +17,7 @@ import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 
-/**
- * Owns the optional Core 2 block subscription and the synchronous hand-off into PlexonQuests'
- * MONITOR cancellation gate.
- */
+/** Owns the optional Core 2 block subscription and synchronous hand-off into the quest block gate. */
 public final class CoreRuntimeCoordinator implements AutoCloseable {
     private static final Set<Material> CROPS = Set.of(
             Material.WHEAT, Material.CARROTS, Material.POTATOES, Material.BEETROOTS, Material.NETHER_WART);
@@ -28,8 +25,7 @@ public final class CoreRuntimeCoordinator implements AutoCloseable {
     private final JavaPlugin plugin;
     private final ConfigManager configs;
     private final CoreBridge core;
-    private final ThreadLocal<ArrayDeque<CoreRuntime.BlockFact>> pending =
-            ThreadLocal.withInitial(ArrayDeque::new);
+    private final ThreadLocal<ArrayDeque<CoreRuntime.BlockFact>> pending = ThreadLocal.withInitial(ArrayDeque::new);
     private final AtomicLong epoch = new AtomicLong();
     private final AtomicLong received = new AtomicLong();
     private final AtomicLong consumed = new AtomicLong();
@@ -50,13 +46,8 @@ public final class CoreRuntimeCoordinator implements AutoCloseable {
         this.core = core;
     }
 
-    public void start() {
-        rebuild(true);
-    }
-
-    public void refresh() {
-        rebuild(false);
-    }
+    public void start() { rebuild(true); }
+    public void refresh() { rebuild(false); }
 
     private void rebuild(boolean initial) {
         ConfigSnapshot snapshot = configs.snapshot();
@@ -67,30 +58,19 @@ public final class CoreRuntimeCoordinator implements AutoCloseable {
                     + "; runtime authority changes require a server restart, so the current mode is retained");
             mode = requestedMode;
         }
-        if (!initial && snapshot == subscriptionSnapshot) {
-            return;
-        }
-
+        if (!initial && snapshot == subscriptionSnapshot) return;
         if ((mode == Mode.CORE || mode == Mode.SHADOW) && !core.runtimeAvailable()) {
             throw new IllegalStateException("core-runtime.mode=" + mode + " but PlexonCore 2 Runtime API is unavailable");
         }
-
         Plan plan = buildPlan(snapshot);
-        if (mode == Mode.CORE
-                && plan.requiresOrigin()
-                && core.runtimeAvailable()
-                && !core.runtime().originImportAvailable()) {
-            throw new IllegalStateException(
-                    "core-runtime.mode=CORE requires PlexonCore origin import support for natural/player-placed quest filters");
+        if (mode == Mode.CORE && plan.requiresOrigin() && core.runtimeAvailable() && !core.runtime().originImportAvailable()) {
+            throw new IllegalStateException("core-runtime.mode=CORE requires PlexonCore origin import support for natural/player-placed quest filters");
         }
-
         boolean nextActive = mode != Mode.LOCAL && core.runtimeAvailable();
         CoreRuntime.Subscription candidate = null;
         if (nextActive && !plan.materials().isEmpty()) {
-            candidate = core.runtime().subscribeBlockBreak(
-                    plan.materials(), plan.requiresOrigin(), this::receive);
+            candidate = core.runtime().subscribeBlockBreak(plan.materials(), plan.requiresOrigin(), this::receive);
         }
-
         closeSubscription();
         subscription = candidate;
         subscriptionSnapshot = snapshot;
@@ -100,10 +80,8 @@ public final class CoreRuntimeCoordinator implements AutoCloseable {
         originRequested = plan.requiresOrigin();
         pending.get().clear();
         epoch.incrementAndGet();
-
         plugin.getLogger().info("PlexonQuests block acquisition mode: " + acquisitionMode()
-                + "; Core routes=" + subscribedMaterials
-                + "; origin requested=" + originRequested
+                + "; Core routes=" + subscribedMaterials + "; origin requested=" + originRequested
                 + "; origin provider=" + originProvider() + '.');
     }
 
@@ -118,13 +96,12 @@ public final class CoreRuntimeCoordinator implements AutoCloseable {
     }
 
     /**
-     * Consume the Core fact matching this exact Bukkit event. The local MONITOR listener still owns
-     * final cancellation correctness because Core 2 currently acquires its immutable fact at HIGHEST.
+     * Consumes the Core fact matching this exact Bukkit event. PlexonCore 2.0.2 dispatches its
+     * callback at final MONITOR and suppresses finally-cancelled breaks; the local listener keeps an
+     * additional cancellation check as a defensive quest-side invariant.
      */
     public CoreRuntime.BlockFact consume(BlockBreakEvent event) {
-        if (!active) {
-            return null;
-        }
+        if (!active) return null;
         ArrayDeque<CoreRuntime.BlockFact> facts = pending.get();
         CoreRuntime.BlockFact fact = facts.peekLast();
         if (fact == null || !matches(fact, event)) {
@@ -139,16 +116,12 @@ public final class CoreRuntimeCoordinator implements AutoCloseable {
     private static boolean matches(CoreRuntime.BlockFact fact, BlockBreakEvent event) {
         return fact.playerId().equals(event.getPlayer().getUniqueId())
                 && fact.worldId().equals(event.getBlock().getWorld().getUID())
-                && fact.x() == event.getBlock().getX()
-                && fact.y() == event.getBlock().getY()
-                && fact.z() == event.getBlock().getZ()
-                && fact.material() == event.getBlock().getType();
+                && fact.x() == event.getBlock().getX() && fact.y() == event.getBlock().getY()
+                && fact.z() == event.getBlock().getZ() && fact.material() == event.getBlock().getType();
     }
 
     public BlockObjectiveProcessor.OriginState origin(CoreRuntime.BlockFact fact) {
-        if (fact == null) {
-            return BlockObjectiveProcessor.OriginState.UNKNOWN;
-        }
+        if (fact == null) return BlockObjectiveProcessor.OriginState.UNKNOWN;
         return switch (fact.origin()) {
             case NATURAL -> BlockObjectiveProcessor.OriginState.NATURAL;
             case PLAYER_PLACED -> BlockObjectiveProcessor.OriginState.PLAYER_PLACED;
@@ -156,99 +129,44 @@ public final class CoreRuntimeCoordinator implements AutoCloseable {
         };
     }
 
-    public void recordShadowComparison(
-            BlockObjectiveProcessor.OriginState local,
-            BlockObjectiveProcessor.OriginState coreState) {
-        if (!shadowMode()) {
-            return;
-        }
+    public void recordShadowComparison(BlockObjectiveProcessor.OriginState local, BlockObjectiveProcessor.OriginState coreState) {
+        if (!shadowMode()) return;
         shadowComparisons.incrementAndGet();
-        if (local != coreState) {
-            shadowMismatches.incrementAndGet();
-        }
+        if (local != coreState) shadowMismatches.incrementAndGet();
     }
 
-    public boolean active() {
-        return active;
-    }
-
-    public boolean shadowMode() {
-        return active && requestedMode == Mode.SHADOW;
-    }
-
-    public boolean originMigrationAvailable() {
-        return active && core.runtime().originImportAvailable();
-    }
-
-    /**
-     * Core origin becomes authoritative only when Core supports persisted legacy-import markers.
-     * SHADOW deliberately keeps the local provider authoritative while comparing Core outcomes.
-     */
-    public boolean coreOriginAuthoritative() {
-        return originMigrationAvailable() && requestedMode != Mode.SHADOW;
-    }
-
-    public boolean localOriginAuthoritative() {
-        return !coreOriginAuthoritative();
-    }
-
-    public String originProvider() {
-        if (shadowMode()) {
-            return "SHADOW";
-        }
-        return coreOriginAuthoritative() ? "CORE" : "LOCAL";
-    }
+    public boolean active() { return active; }
+    public boolean shadowMode() { return active && requestedMode == Mode.SHADOW; }
+    public boolean originMigrationAvailable() { return active && core.runtime().originImportAvailable(); }
+    public boolean coreOriginAuthoritative() { return originMigrationAvailable() && requestedMode != Mode.SHADOW; }
+    public boolean localOriginAuthoritative() { return !coreOriginAuthoritative(); }
+    public String originProvider() { return shadowMode() ? "SHADOW" : (coreOriginAuthoritative() ? "CORE" : "LOCAL"); }
 
     public String acquisitionMode() {
-        if (requestedMode == Mode.LOCAL) {
-            return core.installed() ? "CORE_LEGACY/LOCAL" : "STANDALONE";
-        }
-        if (active) {
-            return "CORE_RUNTIME";
-        }
+        if (requestedMode == Mode.LOCAL) return core.installed() ? "CORE_LEGACY/LOCAL" : "STANDALONE";
+        if (active) return "CORE_RUNTIME";
         return core.installed() && core.compatible() ? "CORE_LEGACY" : "STANDALONE";
     }
 
     public Diagnostics diagnostics() {
-        return new Diagnostics(
-                acquisitionMode(),
-                originProvider(),
-                epoch.get(),
-                subscribedMaterials,
-                originRequested,
-                received.get(),
-                consumed.get(),
-                fallbacks.get(),
-                callbackFailures.get(),
-                coreOriginAuthoritative(),
-                shadowComparisons.get(),
-                shadowMismatches.get());
+        return new Diagnostics(acquisitionMode(), originProvider(), epoch.get(), subscribedMaterials, originRequested,
+                received.get(), consumed.get(), fallbacks.get(), callbackFailures.get(), coreOriginAuthoritative(),
+                shadowComparisons.get(), shadowMismatches.get());
     }
 
     private Plan buildPlan(ConfigSnapshot snapshot) {
         EnumSet<Material> materials = EnumSet.noneOf(Material.class);
         boolean wildcardBreak = false;
         boolean requiresOrigin = false;
-
         for (var quest : snapshot.registry().quests().values()) {
-            if (!quest.enabled()) {
-                continue;
-            }
+            if (!quest.enabled()) continue;
             for (var objective : quest.objectives().values()) {
                 ObjectiveType type = objective.type();
-                if (type != ObjectiveType.BREAK_BLOCK && type != ObjectiveType.HARVEST_CROP) {
-                    continue;
-                }
-                if (objective.filters().origin() != OriginPolicy.ANY) {
-                    requiresOrigin = true;
-                }
+                if (type != ObjectiveType.BREAK_BLOCK && type != ObjectiveType.HARVEST_CROP) continue;
+                if (objective.filters().origin() != OriginPolicy.ANY) requiresOrigin = true;
                 Set<Material> configured = objective.filters().materials();
                 if (type == ObjectiveType.BREAK_BLOCK) {
-                    if (configured.isEmpty()) {
-                        wildcardBreak = true;
-                    } else {
-                        materials.addAll(configured);
-                    }
+                    if (configured.isEmpty()) wildcardBreak = true; else materials.addAll(configured);
                 } else if (configured.isEmpty()) {
                     materials.addAll(CROPS);
                 } else {
@@ -256,14 +174,7 @@ public final class CoreRuntimeCoordinator implements AutoCloseable {
                 }
             }
         }
-
-        if (wildcardBreak) {
-            for (Material material : Material.values()) {
-                if (material.isBlock()) {
-                    materials.add(material);
-                }
-            }
-        }
+        if (wildcardBreak) for (Material material : Material.values()) if (material.isBlock()) materials.add(material);
         return new Plan(Set.copyOf(materials), requiresOrigin);
     }
 
@@ -274,16 +185,12 @@ public final class CoreRuntimeCoordinator implements AutoCloseable {
         try {
             return Mode.valueOf(value == null ? "AUTO" : value.trim().toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException exception) {
-            throw new IllegalArgumentException(
-                    "Unknown core-runtime.mode: " + value + " (expected AUTO, CORE, LOCAL, or SHADOW)");
+            throw new IllegalArgumentException("Unknown core-runtime.mode: " + value + " (expected AUTO, CORE, LOCAL, or SHADOW)");
         }
     }
 
     private void closeSubscription() {
-        if (subscription != null) {
-            subscription.close();
-            subscription = null;
-        }
+        if (subscription != null) { subscription.close(); subscription = null; }
     }
 
     @Override
@@ -294,26 +201,9 @@ public final class CoreRuntimeCoordinator implements AutoCloseable {
         epoch.incrementAndGet();
     }
 
-    private enum Mode {
-        AUTO,
-        CORE,
-        LOCAL,
-        SHADOW
-    }
-
+    private enum Mode { AUTO, CORE, LOCAL, SHADOW }
     private record Plan(Set<Material> materials, boolean requiresOrigin) {}
-
-    public record Diagnostics(
-            String mode,
-            String originProvider,
-            long epoch,
-            int subscribedMaterials,
-            boolean originRequested,
-            long eventsReceived,
-            long eventsConsumed,
-            long fallbackCount,
-            long callbackFailures,
-            boolean coreOriginAuthoritative,
-            long shadowComparisons,
-            long shadowMismatches) {}
+    public record Diagnostics(String mode, String originProvider, long epoch, int subscribedMaterials,
+            boolean originRequested, long eventsReceived, long eventsConsumed, long fallbackCount,
+            long callbackFailures, boolean coreOriginAuthoritative, long shadowComparisons, long shadowMismatches) {}
 }
