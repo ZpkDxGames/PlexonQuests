@@ -34,8 +34,10 @@ public record Contribution(
         String sourceToken) {
 
     public Contribution {
-        Map<String, String> normalized = new LinkedHashMap<>();
-        if (metadata != null) {
+        if (metadata == null || metadata.isEmpty()) {
+            metadata = Map.of();
+        } else {
+            Map<String, String> normalized = new LinkedHashMap<>(metadata.size());
             metadata.forEach((key, value) -> {
                 if (key != null && !key.isBlank()) {
                     normalized.put(
@@ -43,8 +45,8 @@ public record Contribution(
                             Objects.requireNonNullElse(value, "").trim());
                 }
             });
+            metadata = normalized.isEmpty() ? Map.of() : Map.copyOf(normalized);
         }
-        metadata = Map.copyOf(normalized);
         sourceToken = Objects.requireNonNullElse(sourceToken, "");
     }
 
