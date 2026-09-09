@@ -3,8 +3,12 @@ package com.zpkdxgames.plexonquests.integration.core;
 import com.zpkdxgames.plexoncore.api.PlexonCoreAPI;
 import com.zpkdxgames.plexoncore.context.BlockOrigin;
 import com.zpkdxgames.plexoncore.event.CoreBlockSubscription;
+import com.zpkdxgames.plexoncore.origin.BlockOriginService;
+import java.util.Collection;
 import java.util.Objects;
 import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
@@ -73,6 +77,37 @@ public final class PlexonCore2Runtime implements CoreRuntime {
                 throw new IllegalStateException("Could not close PlexonCore block subscription", exception);
             }
         };
+    }
+
+    @Override
+    public boolean originImportAvailable() {
+        try {
+            core.blockOrigins().stats();
+            return true;
+        } catch (LinkageError | RuntimeException unavailable) {
+            return false;
+        }
+    }
+
+    @Override
+    public CompletableFuture<Boolean> originImportComplete(
+            UUID worldId, int chunkX, int chunkZ, String source, int sourceVersion) {
+        return core.blockOrigins().importComplete(worldId, chunkX, chunkZ, source, sourceVersion);
+    }
+
+    @Override
+    public CompletableFuture<Integer> importPlayerPlacedChunk(
+            UUID worldId,
+            int chunkX,
+            int chunkZ,
+            String source,
+            int sourceVersion,
+            Collection<BlockPosition> positions) {
+        var converted = positions.stream()
+                .map(position -> new BlockOriginService.BlockPosition(position.x(), position.y(), position.z()))
+                .toList();
+        return core.blockOrigins().importPlayerPlacedChunk(
+                worldId, chunkX, chunkZ, source, sourceVersion, converted);
     }
 
     private static OriginState map(BlockOrigin origin) {
