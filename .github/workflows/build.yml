@@ -19,20 +19,20 @@ jobs:
           distribution: temurin
           java-version: '25'
           cache: maven
-      - name: Provision PlexonCore 2.0.1 API
+      - name: Provision PlexonCore 2.0.2 API
         shell: bash
         run: |
           set -euo pipefail
-          core_jar="${RUNNER_TEMP}/PlexonCore-2.0.1.jar"
+          core_jar="${RUNNER_TEMP}/PlexonCore-2.0.2.jar"
           curl --fail --location --silent --show-error \
             --output "${core_jar}" \
-            "https://github.com/ZpkDxGames/PlexonCore/releases/download/v2.0.1/PlexonCore-2.0.1.jar"
-          echo "d2f8348b800a4668dc1077c9bf49b5c1886f85d3f0671137faca0c2df4af84ac  ${core_jar}" | sha256sum --check
+            "https://github.com/ZpkDxGames/PlexonCore/releases/download/v2.0.2/PlexonCore-2.0.2.jar"
+          echo "7e096ada4293017203cd4e01cb93761d169fa4c756fc46af520b2aed11a10ef5  ${core_jar}" | sha256sum --check
           mvn -B -ntp org.apache.maven.plugins:maven-install-plugin:3.1.4:install-file \
             -Dfile="${core_jar}" \
             -DgroupId=com.zpkdxgames \
             -DartifactId=PlexonCore \
-            -Dversion=2.0.1 \
+            -Dversion=2.0.2 \
             -Dpackaging=jar \
             -DgeneratePom=true
       - name: Verify
@@ -78,7 +78,7 @@ jobs:
           DISTRIBUTION_EXIT: ${{ steps.distribution.outputs.exit_code }}
         run: |
           state=success
-          description="Java 25 tests and 3.3.0 distribution checks passed"
+          description="Java 25 tests and 3.3.0 distribution checks passed against Core 2.0.2"
           if [[ "${VERIFY_EXIT:-1}" != "0" ]]; then
             state=failure
             description=$(grep -E '^\[ERROR\].*(\.java:|Failed to execute goal|Could not resolve)' build.log | head -1 | sed -E 's/^\[ERROR\][[:space:]]*//' | cut -c1-135)
@@ -103,7 +103,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: steps.verify.outputs.exit_code == '0' && steps.distribution.outputs.exit_code == '0'
         with:
-          name: PlexonQuests-3.3.0
+          name: PlexonQuests-3.3.0-Core-2.0.2
           path: |
             target/PlexonQuests-3.3.0.jar
             target/SHA256SUMS.txt
