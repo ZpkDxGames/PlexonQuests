@@ -12,6 +12,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -23,23 +25,20 @@ jobs:
         run: echo "version=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)" >> "$GITHUB_OUTPUT"
       - name: Enforce tag/version parity
         shell: bash
-        run: test "${GITHUB_REF_NAME}" = "v${{ steps.project.outputs.version }}"
-      - name: Provision PlexonCore 2.0.2 API
+        run: |
+          test "${GITHUB_REF_NAME}" = "v${{ steps.project.outputs.version }}"
+          test "${{ steps.project.outputs.version }}" = "3.3.1"
+      - name: Provision PlexonCore 2.0.4 API
         shell: bash
         run: |
           set -euo pipefail
-          core_jar="${RUNNER_TEMP}/PlexonCore-2.0.2.jar"
-          curl --fail --location --silent --show-error \
-            --output "${core_jar}" \
-            "https://github.com/ZpkDxGames/PlexonCore/releases/download/v2.0.2/PlexonCore-2.0.2.jar"
-          echo "7e096ada4293017203cd4e01cb93761d169fa4c756fc46af520b2aed11a10ef5  ${core_jar}" | sha256sum --check
+          core_jar="${RUNNER_TEMP}/PlexonCore-2.0.4.jar"
+          curl --fail --location --silent --show-error --output "${core_jar}" \
+            "https://github.com/ZpkDxGames/PlexonCore/releases/download/v2.0.4/PlexonCore-2.0.4.jar"
+          echo "61d625a717da9f46ee9231e1970d84b4c317ae12cf4090cdf7c9d39b6a1a9baf  ${core_jar}" | sha256sum --check
           mvn -B -ntp org.apache.maven.plugins:maven-install-plugin:3.1.4:install-file \
-            -Dfile="${core_jar}" \
-            -DgroupId=com.zpkdxgames \
-            -DartifactId=PlexonCore \
-            -Dversion=2.0.2 \
-            -Dpackaging=jar \
-            -DgeneratePom=true
+            -Dfile="${core_jar}" -DgroupId=com.zpkdxgames -DartifactId=PlexonCore \
+            -Dversion=2.0.4 -Dpackaging=jar -DgeneratePom=true
       - name: Verify exact tagged source
         run: mvn -B -ntp clean verify
       - name: Verify distribution
@@ -52,21 +51,20 @@ jobs:
           grep -qx 'plugin.yml' target/jar-contents.txt
           grep -qx 'org/sqlite/JDBC.class' target/jar-contents.txt
           grep -q '^com/zpkdxgames/plexonquests/integration/core/PlexonCore2Runtime.class$' target/jar-contents.txt
+          unzip -p "$jar_path" plugin.yml | grep -F "version: '${{ steps.project.outputs.version }}'"
           if grep -q '^com/zpkdxgames/plexoncore/' target/jar-contents.txt; then
             echo "PlexonCore runtime classes must not be shaded into PlexonQuests" >&2
             exit 1
           fi
-      - name: Checksums
-        working-directory: target
-        run: |
-          sha256sum PlexonQuests-${{ steps.project.outputs.version }}.jar > SHA256SUMS.txt
+          cd target
+          sha256sum "PlexonQuests-${{ steps.project.outputs.version }}.jar" > SHA256SUMS.txt
           sha256sum --check SHA256SUMS.txt
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           target_commitish: ${{ github.sha }}
           name: PlexonQuests ${{ steps.project.outputs.version }}
-          generate_release_notes: true
+          body_path: releases/3.3.1.md
           files: |
             target/PlexonQuests-${{ steps.project.outputs.version }}.jar
             target/SHA256SUMS.txt

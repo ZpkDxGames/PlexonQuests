@@ -58,9 +58,9 @@ class PlexonCoreBridgeTest {
     }
 
     @Test
-    void coreTwoPointZeroPointTwoRegistersRuntimeMode() {
+    void coreTwoPointZeroPointFourRegistersRuntimeMode() {
         PlexonQuestsPlugin plugin = loadQuests();
-        CoreVersion version = CoreVersion.of(2, 0, "2.0.2");
+        CoreVersion version = CoreVersion.of(2, 0, "2.0.4");
         ModuleRegistry modules = new ModuleRegistry(version);
         IntegrationRegistry integrations = new IntegrationRegistry(Bukkit.getPluginManager());
         integrations.refresh();
@@ -104,6 +104,7 @@ class PlexonCoreBridgeTest {
         integrations.refresh();
         registerCoreApi(plugin, version, modules, integrations);
         Plugin other = mock(Plugin.class);
+        when(other.isEnabled()).thenReturn(true);
         ModuleDescriptor existing = new ModuleDescriptor(
                 CoreBridge.MODULE_ID, "Other Quests", "OtherPlugin", "9.9.9", other,
                 ModuleVersionRange.parse(CoreBridge.SUPPORTED_API_RANGE), Set.of("other"), ModuleState.READY,
