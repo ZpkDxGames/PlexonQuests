@@ -5,12 +5,14 @@ final class StandaloneCoreBridge implements CoreBridge {
     private final String pluginVersion;
     private final String apiVersion;
     private final String detail;
+    private final CoreRuntime runtime;
 
     StandaloneCoreBridge(boolean installed, String pluginVersion, String apiVersion, String detail) {
         this.installed = installed;
         this.pluginVersion = pluginVersion == null || pluginVersion.isBlank() ? "-" : pluginVersion;
         this.apiVersion = apiVersion == null || apiVersion.isBlank() ? "-" : apiVersion;
         this.detail = detail == null || detail.isBlank() ? "PlexonCore is not installed" : detail;
+        this.runtime = CoreRuntime.unavailable(this.detail);
     }
 
     @Override
@@ -51,6 +53,16 @@ final class StandaloneCoreBridge implements CoreBridge {
     @Override
     public String detail() {
         return detail;
+    }
+
+    @Override
+    public boolean runtimeAvailable() {
+        return false;
+    }
+
+    @Override
+    public CoreRuntime runtime() {
+        return runtime;
     }
 
     @Override
