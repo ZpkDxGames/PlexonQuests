@@ -1,0 +1,90 @@
+name: Publish PlexonQuests 3.3.0 RC1
+
+on:
+  push:
+    branches:
+      - release/3.3.0-rc.1-publish
+
+permissions:
+  contents: write
+
+env:
+  SOURCE_SHA: 43b155aecf92dd463394dd9b4c50d408c4c71a05
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Checkout verified candidate source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin "${SOURCE_SHA}"
+          git checkout --detach "${SOURCE_SHA}"
+          test "$(git rev-parse HEAD)" = "${SOURCE_SHA}"
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+      - name: Provision PlexonCore 2.0.1 API
+        shell: bash
+        run: |
+          set -euo pipefail
+          core_jar="${RUNNER_TEMP}/PlexonCore-2.0.1.jar"
+          curl --fail --location --silent --show-error \
+            --output "${core_jar}" \
+            "https://github.com/ZpkDxGames/PlexonCore/releases/download/v2.0.1/PlexonCore-2.0.1.jar"
+          echo "d2f8348b800a4668dc1077c9bf49b5c1886f85d3f0671137faca0c2df4af84ac  ${core_jar}" | sha256sum --check
+          mvn -B -ntp org.apache.maven.plugins:maven-install-plugin:3.1.4:install-file \
+            -Dfile="${core_jar}" \
+            -DgroupId=com.zpkdxgames \
+            -DartifactId=PlexonCore \
+            -Dversion=2.0.1 \
+            -Dpackaging=jar \
+            -DgeneratePom=true
+      - name: Verify exact candidate source
+        run: mvn -B -ntp clean verify
+      - name: Verify distribution
+        shell: bash
+        run: |
+          set -euo pipefail
+          jar_path="target/PlexonQuests-3.3.0.jar"
+          test -s "${jar_path}"
+          jar tf "${jar_path}" > target/jar-contents.txt
+          grep -qx 'plugin.yml' target/jar-contents.txt
+          grep -qx 'org/sqlite/JDBC.class' target/jar-contents.txt
+          grep -qx 'com/zpkdxgames/plexonquests/integration/core/PlexonCore2Runtime.class' target/jar-contents.txt
+          if grep -q '^com/zpkdxgames/plexoncore/' target/jar-contents.txt; then
+            echo "PlexonCore runtime classes must not be shaded into PlexonQuests" >&2
+            exit 1
+          fi
+      - name: Generate and verify checksum
+        working-directory: target
+        run: |
+          sha256sum PlexonQuests-3.3.0.jar > SHA256SUMS.txt
+          sha256sum --check SHA256SUMS.txt
+      - name: Publish candidate release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v3.3.0-rc.1
+          target_commitish: ${{ env.SOURCE_SHA }}
+          name: PlexonQuests 3.3.0 RC1
+          prerelease: true
+          body: |
+            # PlexonQuests 3.3.0 RC1
+
+            Core 2 Runtime and shared block-origin migration candidate for Paper 26.2 / Java 25.
+
+            Automated gates passed on source `${{ env.SOURCE_SHA }}`: Maven verify, unit/MockBukkit tests, JAR structure, SHA-256 generation, and no PlexonCore shading.
+
+            This is intentionally a **prerelease candidate**, not the stable `v3.3.0` release. The stable specification still requires live Paper evidence for restart/soak, PlexonTools 4.3 coexistence, shared-origin parity/anti-exploit behavior, and Spark A/B performance before promotion.
+
+            Recommended staging mode: `core-runtime.mode: SHADOW`.
+            Rollback: set `core-runtime.mode: LOCAL` and restart, or restore PlexonQuests 3.2.0.
+          files: |
+            target/PlexonQuests-3.3.0.jar
+            target/SHA256SUMS.txt
