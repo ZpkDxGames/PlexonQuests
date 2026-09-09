@@ -1,5 +1,6 @@
 package com.zpkdxgames.plexonquests.integration.core;
 
+import com.zpkdxgames.plexonquests.config.ConfigManager;
 import com.zpkdxgames.plexonquests.objective.block.BlockObjectiveProcessor;
 import java.util.Map;
 import java.util.UUID;
@@ -33,7 +34,11 @@ public final class CoreOriginMigrator implements Listener, AutoCloseable {
     private final AtomicLong failed = new AtomicLong();
     private final AtomicLong unknown = new AtomicLong();
 
-    public CoreOriginMigrator(JavaPlugin plugin, CoreRuntime runtime, LegacyOriginMigrationSource source) {
+    public CoreOriginMigrator(JavaPlugin plugin, CoreRuntime runtime, ConfigManager configs) {
+        this(plugin, runtime, new LegacyOriginMigrationSource(plugin, configs));
+    }
+
+    CoreOriginMigrator(JavaPlugin plugin, CoreRuntime runtime, LegacyOriginMigrationSource source) {
         this.plugin = plugin;
         this.runtime = runtime;
         this.source = source;
