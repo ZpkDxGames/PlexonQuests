@@ -1,6 +1,7 @@
 package com.zpkdxgames.plexonquests.objective.tracker;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -73,7 +74,8 @@ class CoreObjectiveListenerTest {
         listener.onBreak(event);
 
         verify(origins, never()).origin(block);
-        verify(progress, never()).contribute(player, org.mockito.ArgumentMatchers.any(Contribution.class));
+        verify(progress, never()).contribute(
+                eq(player), org.mockito.ArgumentMatchers.any(Contribution.class));
         verify(origins).markBroken(block);
     }
 
@@ -94,7 +96,8 @@ class CoreObjectiveListenerTest {
         listener.onCraft(event);
 
         verify(player, never()).getInventory();
-        verify(progress, never()).contribute(player, org.mockito.ArgumentMatchers.any(Contribution.class));
+        verify(progress, never()).contribute(
+                eq(player), org.mockito.ArgumentMatchers.any(Contribution.class));
     }
 
     @Test
@@ -109,7 +112,8 @@ class CoreObjectiveListenerTest {
         listener.onBrewingExtract(event);
 
         verify(event, never()).getView();
-        verify(progress, never()).contribute(player, org.mockito.ArgumentMatchers.any(Contribution.class));
+        verify(progress, never()).contribute(
+                eq(player), org.mockito.ArgumentMatchers.any(Contribution.class));
     }
 
     @Test
@@ -127,7 +131,8 @@ class CoreObjectiveListenerTest {
         listener.onDeath(event);
 
         verify(entity, never()).getPersistentDataContainer();
-        verify(progress, never()).contribute(killer, org.mockito.ArgumentMatchers.any(Contribution.class));
+        verify(progress, never()).contribute(
+                eq(killer), org.mockito.ArgumentMatchers.any(Contribution.class));
     }
 
     private static CoreObjectiveListener listener(ProgressService progress, BlockOriginService origins) {
