@@ -63,7 +63,7 @@ jobs:
                       || result == QuestTrackingService.Result.UNTRACKED)) {
                   String path = result == QuestTrackingService.Result.UNTRACKED ? "quests.unpinned" : "quests.pinned";
                   player.sendMessage(text.message(path, Map.of(
-                          "quest_name", text.plain(text.parse(assignment.definition().display().name()))));
+                          "quest_name", text.plain(text.parse(assignment.definition().display().name())))));
               }
               openContext(player, returnContext);
           }'''
