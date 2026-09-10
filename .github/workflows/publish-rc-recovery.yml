@@ -1,0 +1,164 @@
+name: RC Publication Recovery
+
+on:
+  push:
+    branches:
+      - 'release/4.0.0-rc.1-publication-recovery'
+
+permissions:
+  contents: write
+
+env:
+  CANDIDATE_TAG: v4.0.0-rc.1
+  CANDIDATE_VERSION: 4.0.0-rc.1
+  CANDIDATE_SHA: 3f04e2823c2ee53b67387846333ffb312cc0313a
+  EXPECTED_JAR_SIZE: '37242014'
+  EXPECTED_JAR_SHA256: 26108184fc97ccf81f392a01f3b32407ca99306c82a42db881be765fd4ec448b
+
+jobs:
+  publish-exact-tag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact immutable RC tag
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ env.CANDIDATE_TAG }}
+          fetch-depth: 0
+
+      - name: Verify exact tagged SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${CANDIDATE_SHA}"
+          test "$(git rev-parse "${CANDIDATE_TAG}^{commit}")" = "${CANDIDATE_SHA}"
+          test "$(git describe --tags --exact-match HEAD)" = "${CANDIDATE_TAG}"
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+
+      - name: Verify candidate version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(mvn -q -DforceStdout help:evaluate -Dexpression=project.version)
+          test "$version" = "${CANDIDATE_VERSION}"
+          test -f "releases/${CANDIDATE_VERSION}.md"
+
+      - name: Provision PlexonCore 2.0.4 API
+        shell: bash
+        run: |
+          set -euo pipefail
+          core_jar="${RUNNER_TEMP}/PlexonCore-2.0.4.jar"
+          curl --fail --location --silent --show-error --output "${core_jar}" \
+            "https://github.com/ZpkDxGames/PlexonCore/releases/download/v2.0.4/PlexonCore-2.0.4.jar"
+          echo "61d625a717da9f46ee9231e1970d84b4c317ae12cf4090cdf7c9d39b6a1a9baf  ${core_jar}" | sha256sum --check
+          mvn -B -ntp org.apache.maven.plugins:maven-install-plugin:3.1.4:install-file \
+            -Dfile="${core_jar}" -DgroupId=com.zpkdxgames -DartifactId=PlexonCore \
+            -Dversion=2.0.4 -Dpackaging=jar -DgeneratePom=true
+
+      - name: Verify exact tagged source
+        run: mvn -B -ntp clean verify
+
+      - name: Verify tagged distribution and deterministic candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(java -version 2>&1 | head -n 1 | grep -o '25\.[^" ]*' | cut -d. -f1)" = "25"
+          test "$(mvn -q -DforceStdout help:evaluate -Dexpression=plexoncore.version)" = "2.0.4"
+          jar_path="target/PlexonQuests-${CANDIDATE_VERSION}.jar"
+          test -s "$jar_path"
+          jar tf "$jar_path" > target/jar-contents.txt
+          for resource in plugin.yml config.yml messages.yml menus.yml effects.yml rarities.yml quests/daily/stonebound.yml; do
+            grep -qx "$resource" target/jar-contents.txt
+          done
+          grep -qx 'org/sqlite/JDBC.class' target/jar-contents.txt
+          grep -qx 'com/zpkdxgames/plexonquests/integration/core/PlexonCore2Runtime.class' target/jar-contents.txt
+          unzip -p "$jar_path" plugin.yml | grep -F "version: '${CANDIDATE_VERSION}'"
+          for prefix in \
+            'com/zpkdxgames/plexoncore/' \
+            'me/clip/placeholderapi/' \
+            'org/bukkit/' \
+            'net/kyori/adventure/' \
+            'net/luckperms/api/' \
+            'net/milkbowl/vault/'; do
+            if grep -q "^${prefix}" target/jar-contents.txt; then
+              echo "Provided/optional dependency classes must not be shaded: ${prefix}" >&2
+              exit 1
+            fi
+          done
+          JAR_PATH="$jar_path" python3 - <<'PY'
+          import os, zipfile
+          with zipfile.ZipFile(os.environ['JAR_PATH']) as archive:
+              data = archive.read('com/zpkdxgames/plexonquests/PlexonQuestsPlugin.class')
+          major = int.from_bytes(data[6:8], 'big')
+          if major != 69:
+              raise SystemExit(f'Expected Java 25 class major 69, got {major}')
+          print(f'Java class major: {major}')
+          PY
+          size=$(stat -c '%s' "$jar_path")
+          digest=$(sha256sum "$jar_path" | awk '{print $1}')
+          test "$size" = "${EXPECTED_JAR_SIZE}"
+          test "$digest" = "${EXPECTED_JAR_SHA256}"
+          cd target
+          sha256sum "PlexonQuests-${CANDIDATE_VERSION}.jar" > SHA256SUMS.txt
+          sha256sum --check SHA256SUMS.txt
+
+      - name: Generate verified release reports
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+          totals = dict(tests=0, failures=0, errors=0, skipped=0)
+          for report in Path('target/surefire-reports').glob('TEST-*.xml'):
+              root = ET.parse(report).getroot()
+              for key in totals:
+                  totals[key] += int(root.attrib.get(key, 0))
+          if totals != dict(tests=98, failures=0, errors=0, skipped=0):
+              raise SystemExit(f'unexpected test totals: {totals}')
+          Path('target/TEST_SUMMARY.txt').write_text(
+              f"executed={totals['tests']}\nfailures={totals['failures']}\nerrors={totals['errors']}\nskipped={totals['skipped']}\n"
+          )
+          PY
+          jar="target/PlexonQuests-${CANDIDATE_VERSION}.jar"
+          digest=$(sha256sum "$jar" | awk '{print $1}')
+          size=$(stat -c '%s' "$jar")
+          commit=$(git rev-parse HEAD)
+          {
+            echo "repository=${GITHUB_REPOSITORY}"
+            echo "commit=${commit}"
+            echo "version=${CANDIDATE_VERSION}"
+            echo "java_major=69"
+            echo "plexoncore=2.0.4"
+            echo "jar=$(basename "$jar")"
+            echo "jar_size=${size}"
+            echo "jar_sha256=${digest}"
+          } > target/PROVENANCE.txt
+          grep -qx 'executed=98' target/TEST_SUMMARY.txt
+          grep -qx 'failures=0' target/TEST_SUMMARY.txt
+          grep -qx 'errors=0' target/TEST_SUMMARY.txt
+          grep -qx 'skipped=0' target/TEST_SUMMARY.txt
+          grep -qx "repository=${GITHUB_REPOSITORY}" target/PROVENANCE.txt
+          grep -qx "commit=${CANDIDATE_SHA}" target/PROVENANCE.txt
+          grep -qx "version=${CANDIDATE_VERSION}" target/PROVENANCE.txt
+          grep -qx 'java_major=69' target/PROVENANCE.txt
+          grep -qx 'plexoncore=2.0.4' target/PROVENANCE.txt
+          cat target/TEST_SUMMARY.txt
+          cat target/PROVENANCE.txt
+
+      - name: Publish immutable RC prerelease
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.CANDIDATE_TAG }}
+          name: PlexonQuests ${{ env.CANDIDATE_VERSION }}
+          body_path: releases/${{ env.CANDIDATE_VERSION }}.md
+          prerelease: true
+          files: |
+            target/PlexonQuests-${{ env.CANDIDATE_VERSION }}.jar
+            target/SHA256SUMS.txt
+            target/TEST_SUMMARY.txt
+            target/PROVENANCE.txt
