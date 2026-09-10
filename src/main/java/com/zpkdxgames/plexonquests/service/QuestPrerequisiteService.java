@@ -24,7 +24,7 @@ import org.bukkit.configuration.InvalidConfigurationException;
 import org.bukkit.configuration.file.YamlConfiguration;
 
 /**
- * Additive 4.x prerequisite graph. The active graph is swapped only after complete validation.
+ * Additive 4.x prerequisite graph. Candidate graphs are fully validated before activation.
  * Existing QuestDefinition snapshots remain unchanged for 3.3.1 persistence compatibility.
  */
 public final class QuestPrerequisiteService {
@@ -37,41 +37,21 @@ public final class QuestPrerequisiteService {
     }
 
     public ValidationResult validateCandidate() {
-        return load(configs.dataDirectory());
+        return validate(configs.dataDirectory());
     }
 
     public ValidationResult reloadValidated() {
-        ValidationResult result = load(configs.dataDirectory());
+        ValidationResult result = validate(configs.dataDirectory());
         if (result.valid()) {
             active.set(result.snapshot());
         }
         return result;
     }
 
-    public Snapshot snapshot() {
-        return active.get();
-    }
-
-    public Set<String> prerequisites(String questId) {
-        return active.get().prerequisites().getOrDefault(normalize(questId), Set.of());
-    }
-
-    public Set<String> missing(UUIDView completed, String questId) {
-        Set<String> required = prerequisites(questId);
-        if (required.isEmpty()) {
-            return Set.of();
-        }
-        Set<String> missing = new LinkedHashSet<>();
-        for (String id : required) {
-            if (!completed.contains(id)) {
-                missing.add(id);
-            }
-        }
-        return Set.copyOf(missing);
-    }
-
-    private static ValidationResult load(Path dataDirectory) {
-        Path root = dataDirectory.resolve("quests").normalize();
+    /** Pure filesystem preflight used by ConfigManager before it atomically swaps a candidate registry. */
+    public static ValidationResult validate(Path dataDirectory) {
+        Path base = Objects.requireNonNull(dataDirectory, "dataDirectory").toAbsolutePath().normalize();
+        Path root = base.resolve("quests").normalize();
         List<String> errors = new ArrayList<>();
         Map<String, Node> nodes = new LinkedHashMap<>();
         if (!Files.isDirectory(root)) {
@@ -81,7 +61,7 @@ public final class QuestPrerequisiteService {
             for (Path path : stream.filter(Files::isRegularFile)
                     .filter(value -> value.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".yml"))
                     .sorted().toList()) {
-                parse(path, dataDirectory, nodes, errors);
+                parse(path, base, nodes, errors);
             }
         } catch (IOException exception) {
             errors.add("Could not scan quest graph: " + safe(exception.getMessage()));
@@ -113,6 +93,28 @@ public final class QuestPrerequisiteService {
         return new ValidationResult(true, snapshot, List.of());
     }
 
+    public Snapshot snapshot() {
+        return active.get();
+    }
+
+    public Set<String> prerequisites(String questId) {
+        return active.get().prerequisites().getOrDefault(normalize(questId), Set.of());
+    }
+
+    public Set<String> missing(UUIDView completed, String questId) {
+        Set<String> required = prerequisites(questId);
+        if (required.isEmpty()) {
+            return Set.of();
+        }
+        Set<String> missing = new LinkedHashSet<>();
+        for (String id : required) {
+            if (!completed.contains(id)) {
+                missing.add(id);
+            }
+        }
+        return Set.copyOf(missing);
+    }
+
     private static void parse(
             Path path, Path dataDirectory, Map<String, Node> nodes, List<String> errors) {
         String source;
@@ -138,7 +140,8 @@ public final class QuestPrerequisiteService {
                     dependencies.add(dependency);
                 }
             }
-            Node previous = nodes.putIfAbsent(id, new Node(id, yaml.getBoolean("enabled", true), Set.copyOf(dependencies), source));
+            Node previous = nodes.putIfAbsent(id,
+                    new Node(id, yaml.getBoolean("enabled", true), Set.copyOf(dependencies), source));
             if (previous != null) {
                 errors.add(source + ": duplicate quest id " + id + " also defined by " + previous.source());
             }
@@ -150,8 +153,9 @@ public final class QuestPrerequisiteService {
     private static void detectCycles(Map<String, Node> nodes, List<String> errors) {
         Map<String, Visit> visits = new HashMap<>();
         Deque<String> stack = new ArrayDeque<>();
+        Set<String> reportedCycles = new LinkedHashSet<>();
         for (String id : nodes.keySet()) {
-            visit(id, nodes, visits, stack, errors);
+            visit(id, nodes, visits, stack, reportedCycles, errors);
         }
     }
 
@@ -160,6 +164,7 @@ public final class QuestPrerequisiteService {
             Map<String, Node> nodes,
             Map<String, Visit> visits,
             Deque<String> stack,
+            Set<String> reportedCycles,
             List<String> errors) {
         Visit state = visits.get(id);
         if (state == Visit.DONE) {
@@ -177,7 +182,10 @@ public final class QuestPrerequisiteService {
                 }
             }
             cycle.add(id);
-            errors.add("quest-graph: prerequisite cycle " + String.join(" -> ", cycle));
+            String signature = String.join(" -> ", cycle);
+            if (reportedCycles.add(signature)) {
+                errors.add("quest-graph: prerequisite cycle " + signature);
+            }
             return;
         }
         Node node = nodes.get(id);
@@ -188,7 +196,7 @@ public final class QuestPrerequisiteService {
         stack.addLast(id);
         for (String dependency : node.dependencies()) {
             if (nodes.containsKey(dependency)) {
-                visit(dependency, nodes, visits, stack, errors);
+                visit(dependency, nodes, visits, stack, reportedCycles, errors);
             }
         }
         stack.removeLast();
