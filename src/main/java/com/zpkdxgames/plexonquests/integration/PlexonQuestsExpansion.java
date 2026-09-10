@@ -66,7 +66,9 @@ public final class PlexonQuestsExpansion extends PlaceholderExpansion {
         if (player == null || profile == null) {
             return neutral;
         }
-        QuestAssignment pinned = profile.pinnedAssignment().flatMap(profile::assignment).orElse(null);
+        QuestAssignment pinned = profile.pinnedAssignment().flatMap(profile::assignment)
+                .filter(assignment -> assignment.state() == com.zpkdxgames.plexonquests.quest.AssignmentState.ACTIVE)
+                .orElse(null);
         return switch (parameters.toLowerCase(Locale.ROOT)) {
             case "active", "active_count" -> Long.toString(profile.assignments().stream()
                     .filter(assignment -> assignment.state() == com.zpkdxgames.plexonquests.quest.AssignmentState.ACTIVE)

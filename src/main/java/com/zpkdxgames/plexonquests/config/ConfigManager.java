@@ -92,6 +92,7 @@ public final class ConfigManager {
     private final JavaPlugin plugin;
     private final Path dataDirectory;
     private final AtomicReference<ConfigSnapshot> active = new AtomicReference<>();
+    private final AtomicReference<List<String>> lastActivationErrors = new AtomicReference<>(List.of());
 
     public ConfigManager(JavaPlugin plugin) {
         this.plugin = plugin;
@@ -102,9 +103,11 @@ public final class ConfigManager {
         installDefaults();
         Candidate candidate = loadCandidate();
         if (!candidate.activationErrors().isEmpty()) {
+            lastActivationErrors.set(candidate.activationErrors());
             throw new InvalidConfigurationException(String.join("; ", candidate.activationErrors()));
         }
         active.set(candidate.snapshot());
+        lastActivationErrors.set(List.of());
         return candidate.snapshot();
     }
 
@@ -113,16 +116,21 @@ public final class ConfigManager {
             try {
                 Candidate candidate = loadCandidate();
                 if (!candidate.activationErrors().isEmpty()) {
+                    lastActivationErrors.set(candidate.activationErrors());
                     return new ReloadResult(false, active.get(), candidate.snapshot().registry().issues(), candidate.activationErrors());
                 }
                 active.set(candidate.snapshot());
+                lastActivationErrors.set(List.of());
                 return new ReloadResult(true, candidate.snapshot(), candidate.snapshot().registry().issues(), List.of());
             } catch (IOException | InvalidConfigurationException | IllegalArgumentException exception) {
+                List<String> errors = List.of(Objects.requireNonNullElse(
+                        exception.getMessage(), exception.getClass().getSimpleName()));
+                lastActivationErrors.set(errors);
                 return new ReloadResult(
                         false,
                         active.get(),
                         active.get() == null ? List.of() : active.get().registry().issues(),
-                        List.of(Objects.requireNonNullElse(exception.getMessage(), exception.getClass().getSimpleName())));
+                        errors);
             }
         }, executor);
     }
@@ -137,6 +145,10 @@ public final class ConfigManager {
 
     public Path dataDirectory() {
         return dataDirectory;
+    }
+
+    public List<String> lastActivationErrors() {
+        return lastActivationErrors.get();
     }
 
     private Candidate loadCandidate() throws IOException, InvalidConfigurationException {
@@ -181,6 +193,7 @@ public final class ConfigManager {
                 FlatConfiguration.from(messages),
                 FlatConfiguration.from(menus),
                 FlatConfiguration.from(effects),
+                prerequisiteGraph.snapshot(),
                 Instant.now());
         return new Candidate(snapshot, List.copyOf(activationErrors));
     }

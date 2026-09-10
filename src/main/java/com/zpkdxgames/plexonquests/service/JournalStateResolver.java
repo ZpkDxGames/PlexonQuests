@@ -50,9 +50,18 @@ public final class JournalStateResolver {
             }
         }
 
+        UUID playerId = player.getUniqueId();
+        if (!definition.scope().rotating()) {
+            if (!completionHistory.loaded(playerId)) {
+                return JournalState.LOCKED;
+            }
+            if (completionHistory.completed(playerId, definition.id())) {
+                return JournalState.COMPLETED;
+            }
+        }
+
         Set<String> required = prerequisites.prerequisites(definition.id());
         if (!required.isEmpty()) {
-            UUID playerId = player.getUniqueId();
             if (!completionHistory.loaded(playerId)) {
                 return JournalState.LOCKED;
             }
@@ -65,9 +74,6 @@ public final class JournalStateResolver {
 
         if (!eligibility.evaluate(player, profile, definition).eligible()) {
             return JournalState.LOCKED;
-        }
-        if (!definition.scope().rotating() && completionHistory.completed(player.getUniqueId(), definition.id())) {
-            return JournalState.COMPLETED;
         }
         return JournalState.AVAILABLE;
     }

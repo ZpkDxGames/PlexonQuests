@@ -56,6 +56,30 @@ class QuestPrerequisiteServiceTest {
     }
 
     @Test
+    void rejectsThreeNodeCycle() throws Exception {
+        quest("alpha", true, "  completed-quests:\n    - beta\n");
+        quest("beta", true, "  completed-quests:\n    - gamma\n");
+        quest("gamma", true, "  completed-quests:\n    - alpha\n");
+
+        var result = QuestPrerequisiteService.validate(temp);
+
+        assertFalse(result.valid());
+        assertTrue(result.errors().stream().anyMatch(error -> error.contains("prerequisite cycle")));
+    }
+
+    @Test
+    void rejectsTransitiveUnreachableDisabledChain() throws Exception {
+        quest("base", false, "");
+        quest("middle", true, "  completed-quests:\n    - base\n");
+        quest("top", true, "  completed-quests:\n    - middle\n");
+
+        var result = QuestPrerequisiteService.validate(temp);
+
+        assertFalse(result.valid());
+        assertTrue(result.errors().stream().anyMatch(error -> error.contains("base") && error.contains("unreachable")));
+    }
+
+    @Test
     void rejectsEnabledQuestDependingOnDisabledQuest() throws Exception {
         quest("tutorial", false, "");
         quest("advanced", true, "  completed-quests:\n    - tutorial\n");

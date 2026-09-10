@@ -408,9 +408,20 @@ public final class RewardService {
         return Bukkit.dispatchCommand(Bukkit.getConsoleSender(), command);
     }
 
+    static List<RewardDefinition> orderForDelivery(List<RewardDefinition> rewards) {
+        List<RewardDefinition> ordered = new ArrayList<>(rewards.size());
+        rewards.stream().filter(reward -> !irreversibleCommand(reward)).forEach(ordered::add);
+        rewards.stream().filter(RewardService::irreversibleCommand).forEach(ordered::add);
+        return List.copyOf(ordered);
+    }
+
+    private static boolean irreversibleCommand(RewardDefinition reward) {
+        return reward.type() == RewardType.COMMAND || reward.type() == RewardType.PLEXON_KEY;
+    }
+
     private record DeliveryPlan(List<RewardDefinition> rewards) {
         private DeliveryPlan {
-            rewards = List.copyOf(rewards);
+            rewards = orderForDelivery(rewards);
         }
     }
 

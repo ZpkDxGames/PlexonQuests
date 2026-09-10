@@ -185,7 +185,8 @@ public final class QuestItemRenderer {
                     icon + " <gray><name> <progress_color><current></progress_color><dark_gray>/</dark_gray><white><required>",
                     text.placeholders(
                             "name", objective.definition().display(),
-                            "progress_color", text.progressColor(objective.current() * 100D / objective.required()),
+                            "progress_color", text.progressColor(objective.required() == 0L
+                                    ? 0D : objective.current() * 100D / objective.required()),
                             "current", formatObjectiveValue(objective, objective.current()),
                             "required", formatObjectiveValue(objective, objective.required()))));
         }
@@ -195,7 +196,7 @@ public final class QuestItemRenderer {
     private List<Component> actionSummary(Player player, QuestAssignment assignment, boolean pinned) {
         List<Component> output = new ArrayList<>();
         String firstLine = "<yellow>Left-click <gray>details";
-        if (player.hasPermission("plexonquests.pin")) {
+        if (assignment.state() == AssignmentState.ACTIVE && player.hasPermission("plexonquests.pin")) {
             firstLine += " <dark_gray>• <aqua>Right-click <gray>" + (pinned ? "unpin" : "pin");
         }
         output.add(text.parse(firstLine));

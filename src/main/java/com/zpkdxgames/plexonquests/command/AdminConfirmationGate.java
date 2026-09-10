@@ -8,6 +8,7 @@ import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.LongSupplier;
 import org.bukkit.command.CommandSender;
+import org.bukkit.entity.Player;
 
 /**
  * One-shot confirmation gate for destructive admin commands.
@@ -56,6 +57,9 @@ public final class AdminConfirmationGate {
     }
 
     private static String actorKey(CommandSender sender) {
+        if (sender instanceof Player player) {
+            return "player:" + player.getUniqueId();
+        }
         return sender.getClass().getName() + ':' + sender.getName().toLowerCase(Locale.ROOT);
     }
 

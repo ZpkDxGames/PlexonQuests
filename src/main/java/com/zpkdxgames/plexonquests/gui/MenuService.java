@@ -21,6 +21,7 @@ import com.zpkdxgames.plexonquests.service.BlockOriginService;
 import com.zpkdxgames.plexonquests.service.FeedbackChannel;
 import com.zpkdxgames.plexonquests.service.PlayerProfile;
 import com.zpkdxgames.plexonquests.service.ProfileService;
+import com.zpkdxgames.plexonquests.service.QuestTrackingService;
 import com.zpkdxgames.plexonquests.service.SlotResolver;
 import java.time.Duration;
 import java.time.Instant;
@@ -50,6 +51,7 @@ public final class MenuService {
     private final RerollService rerolls;
     private final IntegrationManager integrations;
     private final BlockOriginService origins;
+    private final QuestTrackingService tracking;
     private final TextService text;
     private final ItemFactory itemFactory = new ItemFactory();
     private final QuestItemRenderer renderer;
@@ -66,6 +68,7 @@ public final class MenuService {
             RerollService rerolls,
             IntegrationManager integrations,
             BlockOriginService origins,
+            QuestTrackingService tracking,
             TextService text,
             Executor configExecutor) {
         this.plugin = plugin;
@@ -76,6 +79,7 @@ public final class MenuService {
         this.rerolls = rerolls;
         this.integrations = integrations;
         this.origins = origins;
+        this.tracking = tracking;
         this.text = text;
         this.renderer = new QuestItemRenderer(configs, text, itemFactory);
         this.editor = new QuestFileEditor(configs.dataDirectory());
@@ -180,7 +184,7 @@ public final class MenuService {
 
         PlayerProfile profile = profiles.profile(player).orElse(null);
         boolean assignedToPlayer = profile != null && profile.assignment(assignment.id()).isPresent();
-        if (assignedToPlayer && !assignment.state().terminal() && player.hasPermission("plexonquests.pin")) {
+        if (assignedToPlayer && assignment.state() == AssignmentState.ACTIVE && player.hasPermission("plexonquests.pin")) {
             int pinSlot = configs.snapshot().menus().integer("details.pin-slot", 47);
             boolean pinned = profile.pinnedAssignment().filter(assignment.id()::equals).isPresent();
             holder.getInventory().setItem(pinSlot, renderer.configured("details.pin", text.placeholders(
@@ -483,20 +487,15 @@ public final class MenuService {
     }
 
     private void togglePin(Player player, UUID assignmentId, MenuContext returnContext) {
-        if (!player.hasPermission("plexonquests.pin")) {
-            return;
+        QuestTrackingService.Result result = tracking.toggle(player, assignmentId);
+        PlayerProfile profile = profiles.profile(player).orElse(null);
+        QuestAssignment assignment = profile == null ? null : profile.assignment(assignmentId).orElse(null);
+        if (assignment != null && (result == QuestTrackingService.Result.TRACKED
+                || result == QuestTrackingService.Result.UNTRACKED)) {
+            String path = result == QuestTrackingService.Result.UNTRACKED ? "quests.unpinned" : "quests.pinned";
+            player.sendMessage(text.message(path, Map.of(
+                    "quest_name", text.plain(text.parse(assignment.definition().display().name())))));
         }
-        PlayerProfile profile = requireProfile(player);
-        if (profile == null || profile.assignment(assignmentId).isEmpty()) {
-            return;
-        }
-        boolean unpin = profile.pinnedAssignment().filter(assignmentId::equals).isPresent();
-        profile.pinnedAssignment(unpin ? null : assignmentId);
-        profiles.persistPreferences(profile);
-        String path = unpin ? "quests.unpinned" : "quests.pinned";
-        QuestAssignment assignment = profile.assignment(assignmentId).orElseThrow();
-        player.sendMessage(text.message(path, Map.of(
-                "quest_name", text.plain(text.parse(assignment.definition().display().name())))));
         openContext(player, returnContext);
     }
 

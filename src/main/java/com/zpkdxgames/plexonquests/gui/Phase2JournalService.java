@@ -1,7 +1,6 @@
 package com.zpkdxgames.plexonquests.gui;
 
 import com.zpkdxgames.plexonquests.config.ConfigManager;
-import com.zpkdxgames.plexonquests.event.QuestTrackEvent;
 import com.zpkdxgames.plexonquests.presentation.ItemFactory;
 import com.zpkdxgames.plexonquests.presentation.TextService;
 import com.zpkdxgames.plexonquests.quest.AssignmentState;
@@ -14,6 +13,7 @@ import com.zpkdxgames.plexonquests.service.PlayerProfile;
 import com.zpkdxgames.plexonquests.service.ProfileService;
 import com.zpkdxgames.plexonquests.service.QuestEligibilityService;
 import com.zpkdxgames.plexonquests.service.QuestPrerequisiteService;
+import com.zpkdxgames.plexonquests.service.QuestTrackingService;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -54,6 +54,7 @@ public final class Phase2JournalService implements Listener {
     private final QuestEligibilityService eligibility;
     private final QuestPrerequisiteService prerequisites;
     private final CompletionHistoryCache history;
+    private final QuestTrackingService tracking;
     private final TextService text;
     private final JournalStateResolver states;
     private final ItemFactory items = new ItemFactory();
@@ -65,6 +66,7 @@ public final class Phase2JournalService implements Listener {
             QuestEligibilityService eligibility,
             QuestPrerequisiteService prerequisites,
             CompletionHistoryCache history,
+            QuestTrackingService tracking,
             TextService text) {
         this.configs = configs;
         this.profiles = profiles;
@@ -72,12 +74,24 @@ public final class Phase2JournalService implements Listener {
         this.eligibility = eligibility;
         this.prerequisites = prerequisites;
         this.history = history;
+        this.tracking = tracking;
         this.text = text;
         this.states = new JournalStateResolver(eligibility, prerequisites, history);
     }
 
     public JournalStateResolver stateResolver() {
         return states;
+    }
+
+    public List<String> activeQuestIds(Player player) {
+        PlayerProfile profile = profiles.profile(player).orElse(null);
+        if (profile == null) return List.of();
+        return profile.visibleAssignments().stream()
+                .filter(assignment -> assignment.state() == AssignmentState.ACTIVE)
+                .map(assignment -> assignment.definition().id())
+                .distinct()
+                .sorted()
+                .toList();
     }
 
     public void openOverview(Player player) {
@@ -133,9 +147,10 @@ public final class Phase2JournalService implements Listener {
             QuestAssignment assignment = active.get(i);
             boolean tracked = profile.pinnedAssignment().filter(assignment.id()::equals).isPresent();
             int slot = CONTENT.get(i);
-            holder.inventory.setItem(slot, assignmentCard(assignment, tracked));
+            holder.inventory.setItem(slot, assignmentCard(player, assignment, tracked));
             holder.actions.put(slot, (p, click) -> {
-                if (click.isRightClick() && assignment.state() == AssignmentState.ACTIVE) {
+                if (click.isRightClick() && assignment.state() == AssignmentState.ACTIVE
+                        && p.hasPermission("plexonquests.pin")) {
                     toggleTracked(p, assignment);
                 } else {
                     legacy.openDetails(p, assignment, MenuContext.journal(assignment.definition().scope()));
@@ -203,6 +218,7 @@ public final class Phase2JournalService implements Listener {
     public void openTracked(Player player) {
         PlayerProfile profile = profile(player);
         if (profile == null) return;
+        tracking.reconcile(player, profile);
         QuestAssignment tracked = profile.pinnedAssignment().flatMap(profile::assignment).orElse(null);
         if (tracked == null) {
             player.sendMessage(text.parse("<gray>No tracked quest. <white>Right-click an active quest to track it."));
@@ -327,14 +343,15 @@ public final class Phase2JournalService implements Listener {
     }
 
     private void toggleTracked(Player player, QuestAssignment assignment) {
-        PlayerProfile profile = profile(player);
-        if (profile == null || assignment.state() != AssignmentState.ACTIVE) return;
-        boolean old = profile.pinnedAssignment().filter(assignment.id()::equals).isPresent();
-        profile.pinnedAssignment(old ? null : assignment.id());
-        profiles.persistPreferences(profile);
-        Bukkit.getPluginManager().callEvent(new QuestTrackEvent(
-                player, assignment.id(), assignment.definition().id(), !old));
-        player.sendMessage(text.parse(old ? "<gray>Tracked quest cleared." : "<yellow>Quest is now tracked."));
+        QuestTrackingService.Result result = tracking.toggle(player, assignment.id());
+        switch (result) {
+            case TRACKED -> player.sendMessage(text.parse("<yellow>Quest is now tracked."));
+            case UNTRACKED -> player.sendMessage(text.parse("<gray>Tracked quest cleared."));
+            case NO_PERMISSION -> player.sendMessage(text.parse("<red>You do not have permission to change quest tracking."));
+            case NOT_ACTIVE -> player.sendMessage(text.parse("<red>Only active quests can be tracked."));
+            case NOT_FOUND -> player.sendMessage(text.parse("<red>That quest is no longer available."));
+            case UNCHANGED -> { }
+        }
         openActive(player);
     }
 
@@ -392,7 +409,7 @@ public final class Phase2JournalService implements Listener {
                 List.of("<gray>Page " + (page + 2) + "/" + pages), false, (p, c) -> openAvailable(p, page + 1, category));
     }
 
-    private ItemStack assignmentCard(QuestAssignment assignment, boolean tracked) {
+    private ItemStack assignmentCard(Player player, QuestAssignment assignment, boolean tracked) {
         var progress = assignment.displayProgress();
         String productState = assignment.state() == AssignmentState.COMPLETED ? "COMPLETABLE" : tracked ? "TRACKED" : "ACTIVE";
         List<Component> lore = List.of(
@@ -402,7 +419,9 @@ public final class Phase2JournalService implements Listener {
                 text.parse("<gray>Progress <white>" + text.formatNumber(progress.current()) + "<dark_gray>/</dark_gray><white>" + text.formatNumber(progress.required())),
                 text.progressBar(progress.percentage()),
                 Component.empty(),
-                text.parse("<dark_gray>Left-click details • Right-click track"));
+                text.parse(player.hasPermission("plexonquests.pin") && assignment.state() == AssignmentState.ACTIVE
+                        ? "<dark_gray>Left-click details • Right-click track"
+                        : "<dark_gray>Left-click details"));
         return items.create(assignment.definition().display().icon().material(),
                 text.parse(assignment.definition().display().name()), lore, tracked || assignment.state() == AssignmentState.COMPLETED);
     }

@@ -4,6 +4,7 @@ import com.zpkdxgames.plexonquests.api.PlexonQuestsAPI;
 import com.zpkdxgames.plexonquests.api.PlexonQuestsAPIImpl;
 import com.zpkdxgames.plexonquests.api.PlexonQuestsJournalAPI;
 import com.zpkdxgames.plexonquests.api.PlexonQuestsJournalAPIImpl;
+import com.zpkdxgames.plexonquests.command.Phase2Diagnostics;
 import com.zpkdxgames.plexonquests.command.Phase2QuestCommand;
 import com.zpkdxgames.plexonquests.command.QuestCommand;
 import com.zpkdxgames.plexonquests.command.RuntimeAwareQuestCommand;
@@ -37,6 +38,7 @@ import com.zpkdxgames.plexonquests.service.ProfileService;
 import com.zpkdxgames.plexonquests.service.ProgressService;
 import com.zpkdxgames.plexonquests.service.QuestEligibilityService;
 import com.zpkdxgames.plexonquests.service.QuestPrerequisiteService;
+import com.zpkdxgames.plexonquests.service.QuestTrackingService;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -71,6 +73,7 @@ public class PlexonQuestsPlugin extends JavaPlugin {
     private CoreOriginMigrator coreOriginMigrator;
     private QuestPrerequisiteService prerequisites;
     private CompletionHistoryCache completionHistory;
+    private QuestTrackingService tracking;
     private Phase2JournalService phase2Journal;
     private boolean localOriginAuthority;
     private final List<BukkitTask> maintenanceTasks = new ArrayList<>();
@@ -101,11 +104,9 @@ public class PlexonQuestsPlugin extends JavaPlugin {
             progress = new ProgressService(this, profiles, storage, configs);
             AssignmentService assignments = new AssignmentService(this, storage, progress);
             prerequisites = new QuestPrerequisiteService(configs);
-            QuestPrerequisiteService.ValidationResult graph = prerequisites.reloadValidated();
-            if (!graph.valid()) {
-                throw new IllegalStateException("Invalid quest prerequisite graph: " + String.join("; ", graph.errors()));
-            }
+            QuestPrerequisiteService.Snapshot graph = prerequisites.snapshot();
             completionHistory = new CompletionHistoryCache(this, storage);
+            tracking = new QuestTrackingService(configs, profiles);
             QuestEligibilityService eligibility = new QuestEligibilityService(integrations, prerequisites, completionHistory);
             rotations = new RotationService(this, configs, storage, assignments, progress, eligibility);
             TextService text = new TextService(configs);
@@ -123,9 +124,9 @@ public class PlexonQuestsPlugin extends JavaPlugin {
             }
 
             MenuService menus = new MenuService(
-                    this, configs, profiles, storage, rewards, rerolls, integrations, origins, text, configExecutor);
+                    this, configs, profiles, storage, rewards, rerolls, integrations, origins, tracking, text, configExecutor);
             phase2Journal = new Phase2JournalService(
-                    configs, profiles, menus, eligibility, prerequisites, completionHistory, text);
+                    configs, profiles, menus, eligibility, prerequisites, completionHistory, tracking, text);
 
             registerListeners(rewards, text, menus, phase2Journal);
             registerCommand(assignments, rewards, menus, phase2Journal, text);
@@ -145,13 +146,13 @@ public class PlexonQuestsPlugin extends JavaPlugin {
             Bukkit.getOnlinePlayers().forEach(profiles::load);
             started = true;
             core.markReady("Quest engine ready; block acquisition=" + coreRuntime.acquisitionMode()
-                    + "; origin=" + coreRuntime.originProvider() + "; prerequisite-graph=" + graph.snapshot().questCount());
+                    + "; origin=" + coreRuntime.originProvider() + "; prerequisite-graph=" + graph.questCount());
 
             getLogger().info("PlexonQuests " + getPluginMeta().getVersion() + " enabled with "
                     + initial.registry().quests().size() + " quests, " + initial.registry().pools().size()
                     + " pools, and " + initial.registry().errorCount() + " quarantined definition error(s). Runtime: "
                     + coreRuntime.acquisitionMode() + "; origin provider: " + coreRuntime.originProvider()
-                    + "; prerequisite graph: " + graph.snapshot().questCount() + " quest(s).");
+                    + "; prerequisite graph: " + graph.questCount() + " quest(s).");
         } catch (Exception exception) {
             if (core != null) {
                 core.markFailed("Quest startup failed: " + exception.getClass().getSimpleName());
@@ -167,6 +168,7 @@ public class PlexonQuestsPlugin extends JavaPlugin {
         var manager = Bukkit.getPluginManager();
         manager.registerEvents(new MenuListener(configs), this);
         manager.registerEvents(journal, this);
+        manager.registerEvents(tracking, this);
         manager.registerEvents(completionHistory, this);
         manager.registerEvents(
                 new CoreObjectiveListener(this, progress, origins, configs, coreRuntime, coreOriginMigrator), this);
@@ -201,8 +203,10 @@ public class PlexonQuestsPlugin extends JavaPlugin {
                 origins,
                 text,
                 configExecutor);
+        Phase2Diagnostics phase2Diagnostics = new Phase2Diagnostics(
+                this, configs, profiles, storage, prerequisites, completionHistory, tracking, text);
         Phase2QuestCommand phase2Handler = new Phase2QuestCommand(
-                this, baseHandler, journal, prerequisites, text, configExecutor);
+                baseHandler, journal, tracking, phase2Diagnostics, text);
         RuntimeAwareQuestCommand handler = new RuntimeAwareQuestCommand(
                 phase2Handler, phase2Handler, coreRuntime, coreOriginMigrator, text);
         command.setExecutor(handler);
@@ -233,9 +237,10 @@ public class PlexonQuestsPlugin extends JavaPlugin {
 
     private void configureProfiles(TextService text) {
         profiles.readyHandler((player, profile) -> {
+            tracking.reconcile(player, profile);
             progress.reindex(profile);
             rerolls.warm(player);
-            completionHistory.load(player).whenComplete((ignored, failure) ->
+            completionHistory.load(player, profile).whenComplete((ignored, failure) ->
                     Bukkit.getScheduler().runTask(this, () -> {
                         if (failure != null
                                 || !player.isOnline()
@@ -286,23 +291,20 @@ public class PlexonQuestsPlugin extends JavaPlugin {
             }
         }
         integrations.detect();
+        completionHistory.invalidateAll();
         profiles.onlineProfiles().forEach(profile -> {
             profiles.refreshRankCategory(profile);
+            Player player = Bukkit.getPlayer(profile.playerId());
+            if (player != null && player.isOnline()) {
+                tracking.reconcile(player, profile);
+                completionHistory.load(player, profile).whenComplete((ignored, failure) -> {
+                    if (failure != null) {
+                        getLogger().log(Level.WARNING, "Could not reload completion history after configuration activation", failure);
+                    }
+                });
+            }
             progress.reindex(profile);
         });
-        if (prerequisites != null && configExecutor != null) {
-            java.util.concurrent.CompletableFuture
-                    .supplyAsync(prerequisites::reloadValidated, configExecutor)
-                    .thenAccept(result -> {
-                        if (!result.valid()) {
-                            getLogger().severe("Reloaded YAML contains an invalid prerequisite graph; previous Phase 2 graph remains active: "
-                                    + String.join("; ", result.errors()));
-                            if (core != null) {
-                                core.markDegraded("Quest prerequisite graph reload rejected; previous graph retained");
-                            }
-                        }
-                    });
-        }
         if (activity != null) {
             activity.restart();
         }
@@ -394,6 +396,10 @@ public class PlexonQuestsPlugin extends JavaPlugin {
         if (activity != null) {
             activity.close();
             activity = null;
+        }
+        if (completionHistory != null) {
+            completionHistory.close();
+            completionHistory = null;
         }
         if (effects != null) {
             effects.close();

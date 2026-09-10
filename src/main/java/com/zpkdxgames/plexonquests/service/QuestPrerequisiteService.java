@@ -17,7 +17,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 import org.bukkit.configuration.InvalidConfigurationException;
@@ -30,7 +29,6 @@ import org.bukkit.configuration.file.YamlConfiguration;
 public final class QuestPrerequisiteService {
     private static final Pattern ID = Pattern.compile("[a-z0-9_-]+");
     private final ConfigManager configs;
-    private final AtomicReference<Snapshot> active = new AtomicReference<>(Snapshot.empty());
 
     public QuestPrerequisiteService(ConfigManager configs) {
         this.configs = Objects.requireNonNull(configs, "configs");
@@ -41,11 +39,7 @@ public final class QuestPrerequisiteService {
     }
 
     public ValidationResult reloadValidated() {
-        ValidationResult result = validate(configs.dataDirectory());
-        if (result.valid()) {
-            active.set(result.snapshot());
-        }
-        return result;
+        return new ValidationResult(true, snapshot(), List.of());
     }
 
     /** Pure filesystem preflight used by ConfigManager before it atomically swaps a candidate registry. */
@@ -94,11 +88,11 @@ public final class QuestPrerequisiteService {
     }
 
     public Snapshot snapshot() {
-        return active.get();
+        return configs.snapshot().prerequisiteGraph();
     }
 
     public Set<String> prerequisites(String questId) {
-        return active.get().prerequisites().getOrDefault(normalize(questId), Set.of());
+        return snapshot().prerequisites().getOrDefault(normalize(questId), Set.of());
     }
 
     public Set<String> missing(UUIDView completed, String questId) {
