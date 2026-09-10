@@ -32,14 +32,14 @@ class ConfigManagerReloadContractTest {
         String original = Files.readString(quest);
 
         Files.writeString(quest, original + "\nprerequisites:\n  completed-quests: [stonebound]\n");
-        ReloadResult rejected = manager.reloadAsync(Runnable::run).join();
+        ConfigManager.ReloadResult rejected = manager.reloadAsync(Runnable::run).join();
 
         assertFalse(rejected.success());
         assertSame(knownGood, manager.snapshot());
         assertTrue(manager.lastActivationErrors().stream().anyMatch(error -> error.contains("cannot depend on itself")));
 
         Files.writeString(quest, original);
-        ReloadResult recovered = manager.reloadAsync(Runnable::run).join();
+        ConfigManager.ReloadResult recovered = manager.reloadAsync(Runnable::run).join();
         assertTrue(recovered.success());
         assertTrue(manager.lastActivationErrors().isEmpty());
         assertTrue(manager.reloadAsync(Runnable::run).join().success());
