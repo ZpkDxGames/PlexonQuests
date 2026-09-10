@@ -1,0 +1,52 @@
+name: Apply Phase2 Config Boundary Fix
+
+on:
+  push:
+    branches: ['phase2/4.0.0-premium-journal']
+    paths: ['.github/workflows/apply-phase2-config-fix.yml']
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: phase2/4.0.0-premium-journal
+          fetch-depth: 0
+      - name: Patch ConfigManager transaction boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('src/main/java/com/zpkdxgames/plexonquests/config/ConfigManager.java')
+          text = path.read_text()
+          import_anchor = 'import com.zpkdxgames.plexonquests.quest.QuestScope;\n'
+          import_line = 'import com.zpkdxgames.plexonquests.service.QuestPrerequisiteService;\n'
+          if import_line not in text:
+              if import_anchor not in text:
+                  raise SystemExit('ConfigManager import anchor missing')
+              text = text.replace(import_anchor, import_anchor + import_line, 1)
+          anchor = '        MiniMessageValidator.validateRegistry(registry, activationErrors);\n'
+          insertion = '''        QuestPrerequisiteService.ValidationResult prerequisiteGraph =\n                QuestPrerequisiteService.validate(dataDirectory);\n        if (!prerequisiteGraph.valid()) {\n            activationErrors.addAll(prerequisiteGraph.errors());\n        }\n'''
+          if insertion not in text:
+              if anchor not in text:
+                  raise SystemExit('ConfigManager validation anchor missing')
+              text = text.replace(anchor, anchor + insertion, 1)
+          path.write_text(text)
+          PY
+          rm .github/workflows/apply-phase2-config-fix.yml
+          git diff --check
+          grep -q 'QuestPrerequisiteService.validate(dataDirectory)' src/main/java/com/zpkdxgames/plexonquests/config/ConfigManager.java
+      - name: Commit implementation patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/main/java/com/zpkdxgames/plexonquests/config/ConfigManager.java .github/workflows/apply-phase2-config-fix.yml
+          git commit -m "fix: validate prerequisite graph before config activation"
+          git push origin HEAD:phase2/4.0.0-premium-journal
