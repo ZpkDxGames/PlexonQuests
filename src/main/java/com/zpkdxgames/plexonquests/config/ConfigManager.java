@@ -5,6 +5,7 @@ import com.zpkdxgames.plexonquests.quest.PoolDefinition;
 import com.zpkdxgames.plexonquests.quest.QuestDefinition;
 import com.zpkdxgames.plexonquests.quest.QuestRegistrySnapshot;
 import com.zpkdxgames.plexonquests.quest.QuestScope;
+import com.zpkdxgames.plexonquests.service.QuestPrerequisiteService;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -159,6 +160,11 @@ public final class ConfigManager {
                 .load();
         registry = withPoolCapacityWarnings(registry, settings);
         MiniMessageValidator.validateRegistry(registry, activationErrors);
+        QuestPrerequisiteService.ValidationResult prerequisiteGraph =
+                QuestPrerequisiteService.validate(dataDirectory);
+        if (!prerequisiteGraph.valid()) {
+            activationErrors.addAll(prerequisiteGraph.errors());
+        }
         if (registry.quests().isEmpty()) {
             activationErrors.add("No valid quests were loaded");
         }
