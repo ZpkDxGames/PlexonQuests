@@ -33,14 +33,21 @@ jobs:
           mvn -B -ntp org.apache.maven.plugins:maven-install-plugin:3.1.4:install-file \
             -Dfile="${core_jar}" -DgroupId=com.zpkdxgames -DartifactId=PlexonCore \
             -Dversion=2.0.4 -Dpackaging=jar -DgeneratePom=true
+      - name: Resolve candidate version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(mvn -q -DforceStdout help:evaluate -Dexpression=project.version)
+          echo "PLEXONQUESTS_VERSION=${version}" >> "$GITHUB_ENV"
       - name: Verify
         run: mvn -B -ntp clean verify
       - name: Verify distribution
         shell: bash
         run: |
           set -euo pipefail
-          version=$(mvn -q -DforceStdout help:evaluate -Dexpression=project.version)
-          test "$version" = "3.3.1"
+          version="${PLEXONQUESTS_VERSION}"
+          test -n "$version"
+          test "$version" != "3.3.1"
           test "$(mvn -q -DforceStdout help:evaluate -Dexpression=plexoncore.version)" = "2.0.4"
           jar_path="target/PlexonQuests-${version}.jar"
           test -s "${jar_path}"
@@ -53,14 +60,18 @@ jobs:
             echo "PlexonCore runtime classes must not be shaded into PlexonQuests" >&2
             exit 1
           fi
+          if grep -q '^me/clip/placeholderapi/' target/jar-contents.txt; then
+            echo "PlaceholderAPI classes must not be shaded into PlexonQuests" >&2
+            exit 1
+          fi
           cd target
           sha256sum "PlexonQuests-${version}.jar" > SHA256SUMS.txt
           sha256sum --check SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: PlexonQuests-3.3.1-Core-2.0.4-${{ github.sha }}
+          name: PlexonQuests-${{ env.PLEXONQUESTS_VERSION }}-Core-2.0.4-${{ github.sha }}
           path: |
-            target/PlexonQuests-3.3.1.jar
+            target/PlexonQuests-${{ env.PLEXONQUESTS_VERSION }}.jar
             target/SHA256SUMS.txt
           if-no-files-found: error
       - name: Check whitespace
