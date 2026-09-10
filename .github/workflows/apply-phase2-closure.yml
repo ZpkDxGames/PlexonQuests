@@ -32,8 +32,43 @@ jobs:
           mvn -B -ntp org.apache.maven.plugins:maven-install-plugin:3.1.4:install-file \
             -Dfile="${core_jar}" -DgroupId=com.zpkdxgames -DartifactId=PlexonCore \
             -Dversion=2.0.4 -Dpackaging=jar -DgeneratePom=true
+      - name: Normalize legacy GUI patch anchor
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('.github/phase2_closure_patch.py')
+          text = p.read_text()
+          marker = 'replace(\n    "src/main/java/com/zpkdxgames/plexonquests/gui/MenuService.java",\n    \'\'\'    private void togglePin'
+          start = text.index(marker)
+          end = text.index('\n\n# Never advertise', start)
+          p.write_text(text[:start] + text[end:])
+          PY
       - name: Apply closure patch
         run: python3 .github/phase2_closure_patch.py
+      - name: Patch legacy tracking delegate
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('src/main/java/com/zpkdxgames/plexonquests/gui/MenuService.java')
+          text = p.read_text()
+          start = text.index('    private void togglePin(Player player, UUID assignmentId, MenuContext returnContext) {')
+          end = text.index('\n\n    private void bindTabs(', start)
+          replacement = '''    private void togglePin(Player player, UUID assignmentId, MenuContext returnContext) {
+              QuestTrackingService.Result result = tracking.toggle(player, assignmentId);
+              PlayerProfile profile = profiles.profile(player).orElse(null);
+              QuestAssignment assignment = profile == null ? null : profile.assignment(assignmentId).orElse(null);
+              if (assignment != null && (result == QuestTrackingService.Result.TRACKED
+                      || result == QuestTrackingService.Result.UNTRACKED)) {
+                  String path = result == QuestTrackingService.Result.UNTRACKED ? "quests.unpinned" : "quests.pinned";
+                  player.sendMessage(text.message(path, Map.of(
+                          "quest_name", text.plain(text.parse(assignment.definition().display().name()))));
+              }
+              openContext(player, returnContext);
+          }'''
+          p.write_text(text[:start] + replacement + text[end:])
+          PY
       - name: Verify patched source
         run: mvn -B -ntp clean verify
       - name: Check patch whitespace
