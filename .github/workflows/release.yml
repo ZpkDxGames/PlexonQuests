@@ -26,8 +26,9 @@ jobs:
       - name: Enforce tag/version parity
         shell: bash
         run: |
+          set -euo pipefail
           test "${GITHUB_REF_NAME}" = "v${{ steps.project.outputs.version }}"
-          test "${{ steps.project.outputs.version }}" = "3.3.1"
+          test -f "releases/${{ steps.project.outputs.version }}.md"
       - name: Provision PlexonCore 2.0.4 API
         shell: bash
         run: |
@@ -45,26 +46,32 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          jar_path="target/PlexonQuests-${{ steps.project.outputs.version }}.jar"
+          version="${{ steps.project.outputs.version }}"
+          jar_path="target/PlexonQuests-${version}.jar"
           test -s "${jar_path}"
           jar tf "${jar_path}" > target/jar-contents.txt
           grep -qx 'plugin.yml' target/jar-contents.txt
           grep -qx 'org/sqlite/JDBC.class' target/jar-contents.txt
           grep -q '^com/zpkdxgames/plexonquests/integration/core/PlexonCore2Runtime.class$' target/jar-contents.txt
-          unzip -p "$jar_path" plugin.yml | grep -F "version: '${{ steps.project.outputs.version }}'"
+          unzip -p "$jar_path" plugin.yml | grep -F "version: '${version}'"
           if grep -q '^com/zpkdxgames/plexoncore/' target/jar-contents.txt; then
             echo "PlexonCore runtime classes must not be shaded into PlexonQuests" >&2
             exit 1
           fi
+          if grep -q '^me/clip/placeholderapi/' target/jar-contents.txt; then
+            echo "PlaceholderAPI classes must not be shaded into PlexonQuests" >&2
+            exit 1
+          fi
           cd target
-          sha256sum "PlexonQuests-${{ steps.project.outputs.version }}.jar" > SHA256SUMS.txt
+          sha256sum "PlexonQuests-${version}.jar" > SHA256SUMS.txt
           sha256sum --check SHA256SUMS.txt
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           target_commitish: ${{ github.sha }}
           name: PlexonQuests ${{ steps.project.outputs.version }}
-          body_path: releases/3.3.1.md
+          body_path: releases/${{ steps.project.outputs.version }}.md
+          prerelease: ${{ contains(steps.project.outputs.version, '-rc.') }}
           files: |
             target/PlexonQuests-${{ steps.project.outputs.version }}.jar
             target/SHA256SUMS.txt
