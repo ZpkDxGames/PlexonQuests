@@ -126,7 +126,17 @@ public class PlexonQuestsPlugin extends JavaPlugin {
             MenuService menus = new MenuService(
                     this, configs, profiles, storage, rewards, rerolls, integrations, origins, tracking, text, configExecutor);
             phase2Journal = new Phase2JournalService(
-                    configs, profiles, menus, eligibility, prerequisites, completionHistory, tracking, text);
+                    this,
+                    configs,
+                    profiles,
+                    storage,
+                    rewards,
+                    rerolls,
+                    eligibility,
+                    prerequisites,
+                    completionHistory,
+                    tracking,
+                    text);
 
             registerListeners(rewards, text, menus, phase2Journal);
             registerCommand(assignments, rewards, menus, phase2Journal, text);
