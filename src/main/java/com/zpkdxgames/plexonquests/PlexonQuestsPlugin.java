@@ -225,7 +225,7 @@ public class PlexonQuestsPlugin extends JavaPlugin {
 
     private void registerApi(AssignmentService assignments, MenuService menus, Phase2JournalService journal) {
         PlexonQuestsAPI api = new PlexonQuestsAPIImpl(
-                this, configs, profiles, assignments, progress, menus, integrations);
+                this, configs, profiles, assignments, progress, journal, integrations);
         Bukkit.getServicesManager().register(PlexonQuestsAPI.class, api, this, ServicePriority.Normal);
 
         PlexonQuestsJournalAPI journalApi = new PlexonQuestsJournalAPIImpl(
