@@ -72,13 +72,21 @@ class Phase3JournalUxArchitectureTest {
     }
 
     @Test
-    void backAndPaginationUseStableSharedSlots() throws IOException {
+    void sharedControlBarUsesFinalPlexonSlotGeometry() throws IOException {
         String source = Files.readString(JOURNAL);
         assertTrue(source.contains("item(holder, 45, Material.ARROW"));
         assertTrue(source.contains("item(holder, 48, Material.ARROW"));
-        assertTrue(source.contains("item(holder, 51, Material.MAP"));
-        assertTrue(source.contains("item(holder, 53, Material.ARROW"));
+        assertTrue(source.contains("item(holder, 49, Material.MAP"));
+        assertTrue(source.contains("item(holder, 50, Material.ARROW"));
+        assertTrue(source.contains("item(holder, 53, Material.EMERALD"));
         assertTrue(source.contains("openContext(p, parent)"));
+    }
+
+    @Test
+    void sectionIdentityUsesReservedHeaderSlot() throws IOException {
+        String source = Files.readString(JOURNAL);
+        assertTrue(source.contains("item(holder, 4, sectionMaterial(selected)"));
+        assertTrue(source.contains("sectionLabel(selected)"));
     }
 
     @Test
@@ -86,9 +94,24 @@ class Phase3JournalUxArchitectureTest {
         String source = Files.readString(JOURNAL);
         assertTrue(source.contains("This quest changed while the menu was open"));
         assertTrue(source.contains("holder.submit(\"claim\")"));
-        assertTrue(source.contains("holder.submit(\"track:"));
+        assertTrue(source.contains("holder.submit(submission)"));
+        assertTrue(source.contains("holder.release(submission)"));
         assertTrue(source.contains("holder.submit(\"prepare-reroll\")"));
         assertTrue(source.contains("holder.submit(\"reroll\")"));
+    }
+
+    @Test
+    void rapidClicksAreDebouncedAndTrackingRefreshesInPlace() throws IOException {
+        String source = Files.readString(JOURNAL);
+        assertTrue(source.contains("CLICK_DEBOUNCE_NANOS"));
+        assertTrue(source.contains("holder.acceptInteraction()"));
+        assertTrue(source.contains("refreshTrackingPresentation(player, holder, live, parent)"));
+
+        int start = source.indexOf("private void toggleTracked(");
+        int end = source.indexOf("private void runNextAction", start);
+        assertTrue(start >= 0 && end > start);
+        String toggle = source.substring(start, end);
+        assertFalse(toggle.contains("openDetailsById"));
     }
 
     @Test
