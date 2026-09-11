@@ -4,6 +4,17 @@ All notable changes to PlexonQuests are documented here.
 
 ## [Unreleased]
 
+## [4.0.0] - Stable
+
+- Promotes the accepted Phase 2 / Phase 3 premium quest-journal line and final RC3 UX to stable `4.0.0` without changing production Java behavior after the accepted candidate.
+- Preserves indexed per-player objective interest, durable contribution-token deduplication, fail-closed origin/provenance handling, deterministic rotations, prerequisite-aware eligibility, asynchronous bounded history, and coalesced SQLite/WAL persistence.
+- Preserves guarded reward claims with preflight, durable reservation, side-effect uncertainty recording, irreversible command/key delivery last, and durable completion.
+- Preserves the final premium 54-slot journal geometry, explicit player-facing states, bounded rapid-click debounce, in-place Track/Untrack refresh, and stale-safe asynchronous Completed history rendering.
+- Stable Build verification now proves the final RC3 head, accepted Phase 3/performance ancestry, Java 25/Paper 26.2/PlexonCore 2.0.4 compatibility, SQLite inclusion, relocated FastUtil, provided-dependency non-shading, non-empty/all-green tests, checksum and provenance.
+- Replaces historical one-off/RC publishers with an exact-current-`main` stable publisher that rebuilds the source, publishes the JAR plus verification evidence, downloads the published assets and verifies their SHA-256 and exact source provenance before completion.
+- Live PlexonCraft runtime certification remains a post-release deployment follow-up and may be recorded as `NOT_EXECUTED` in GitHub release provenance.
+- Rollback baseline remains `v3.3.1` at `b74fc212d5aea41a0e01e9bc1bf5c5382302d014`.
+
 ## [3.3.0] - 2026-09-09
 
 - Migrated high-frequency block-break acquisition to the PlexonCore 2 Runtime while preserving a small PlexonQuests MONITOR gate for final cancellation correctness.
