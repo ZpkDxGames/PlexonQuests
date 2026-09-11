@@ -216,7 +216,7 @@ public class PlexonQuestsPlugin extends JavaPlugin {
         Phase2Diagnostics phase2Diagnostics = new Phase2Diagnostics(
                 this, configs, profiles, storage, prerequisites, completionHistory, tracking, text);
         Phase2QuestCommand phase2Handler = new Phase2QuestCommand(
-                baseHandler, journal, tracking, phase2Diagnostics, text);
+                baseHandler, journal, profiles, tracking, phase2Diagnostics, text);
         RuntimeAwareQuestCommand handler = new RuntimeAwareQuestCommand(
                 phase2Handler, phase2Handler, coreRuntime, coreOriginMigrator, text);
         command.setExecutor(handler);
