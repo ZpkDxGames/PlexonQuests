@@ -11,8 +11,11 @@ import com.zpkdxgames.plexonquests.objective.block.BlockObjectiveProcessor;
 import com.zpkdxgames.plexonquests.service.BlockOriginService;
 import com.zpkdxgames.plexonquests.service.ProgressService;
 import java.util.Locale;
+import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
+import org.bukkit.World;
+import org.bukkit.block.Block;
 import org.bukkit.block.data.Ageable;
 import org.bukkit.entity.Item;
 import org.bukkit.entity.LivingEntity;
@@ -67,6 +70,9 @@ public final class CoreObjectiveListener implements Listener {
         this.coreRuntime = coreRuntime;
         this.coreOrigins = coreOrigins;
         this.spawnReasonKey = new NamespacedKey(plugin, "spawn_reason");
+        if (coreRuntime != null) {
+            coreRuntime.bindCommittedBlockConsumer(this::onCommittedCoreBreak);
+        }
     }
 
     public CoreObjectiveListener(
@@ -93,11 +99,16 @@ public final class CoreObjectiveListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void onBreak(BlockBreakEvent event) {
-        CoreRuntime.BlockFact coreFact = coreRuntime == null ? null : coreRuntime.consume(event);
         if (event.isCancelled()) {
             return;
         }
+        // In authoritative Core mode the Core MONITOR callback already represents the committed
+        // break. Processing it directly avoids a second Bukkit listener/correlation pass.
+        if (coreRuntime != null && coreRuntime.directCommittedRouting()) {
+            return;
+        }
 
+        CoreRuntime.BlockFact coreFact = coreRuntime == null ? null : coreRuntime.consume(event);
         Player player = event.getPlayer();
         Material material = event.getBlock().getType();
         boolean coreOrigin = coreRuntime != null && coreRuntime.coreOriginAuthoritative();
@@ -106,7 +117,7 @@ public final class CoreObjectiveListener implements Listener {
             blockProcessor.breakBlock(
                     player,
                     material,
-                    () -> mature(event),
+                    () -> mature(event.getBlock()),
                     () -> {
                         if (coreOrigin) {
                             return coreOrigins == null
@@ -129,6 +140,31 @@ public final class CoreObjectiveListener implements Listener {
                 origins.markBroken(event.getBlock());
             }
         }
+    }
+
+    private void onCommittedCoreBreak(CoreRuntime.BlockFact fact) {
+        if (coreRuntime == null || !coreRuntime.directCommittedRouting()) {
+            return;
+        }
+        Player player = Bukkit.getPlayer(fact.playerId());
+        World world = Bukkit.getWorld(fact.worldId());
+        if (player == null || !player.isOnline() || world == null
+                || !player.getWorld().getUID().equals(fact.worldId())) {
+            return;
+        }
+        Block block = world.getBlockAt(fact.x(), fact.y(), fact.z());
+        if (block.getType() != fact.material()) {
+            // A committed fact must still match the synchronous world state. Fail closed rather
+            // than rewarding a block that another listener mutated unexpectedly at MONITOR.
+            return;
+        }
+        blockProcessor.breakBlock(
+                player,
+                fact.material(),
+                () -> mature(block),
+                () -> coreOrigins == null
+                        ? coreRuntime.origin(fact)
+                        : coreOrigins.resolve(block, fact));
     }
 
     private BlockObjectiveProcessor.OriginState localOrigin(BlockBreakEvent event) {
@@ -437,8 +473,8 @@ public final class CoreObjectiveListener implements Listener {
         return null;
     }
 
-    private static boolean mature(BlockBreakEvent event) {
-        return !(event.getBlock().getBlockData() instanceof Ageable ageable)
+    private static boolean mature(Block block) {
+        return !(block.getBlockData() instanceof Ageable ageable)
                 || ageable.getAge() >= ageable.getMaximumAge();
     }
 
