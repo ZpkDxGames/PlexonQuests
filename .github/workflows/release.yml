@@ -27,9 +27,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "${GITHUB_REF_NAME}" = "v${{ steps.project.outputs.version }}"
-          test "${{ steps.project.outputs.version }}" = "4.0.0-rc.1"
-          test -f "releases/${{ steps.project.outputs.version }}.md"
+          version="${{ steps.project.outputs.version }}"
+          test "${GITHUB_REF_NAME}" = "v${version}"
+          case "$version" in
+            *-rc.*) ;;
+            *) echo "This workflow publishes prerelease RCs only: $version" >&2; exit 1 ;;
+          esac
+          test -f "releases/${version}.md"
       - name: Provision PlexonCore 2.0.4 API
         shell: bash
         run: |
