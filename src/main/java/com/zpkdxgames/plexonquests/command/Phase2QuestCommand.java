@@ -2,6 +2,7 @@ package com.zpkdxgames.plexonquests.command;
 
 import com.zpkdxgames.plexonquests.gui.Phase2JournalService;
 import com.zpkdxgames.plexonquests.presentation.TextService;
+import com.zpkdxgames.plexonquests.quest.QuestScope;
 import com.zpkdxgames.plexonquests.service.QuestTrackingService;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -17,11 +18,11 @@ import org.bukkit.entity.Player;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-/** 4.x command compatibility layer around the mature 3.x QuestCommand. */
+/** 4.x compatibility layer that routes player journal commands into the unified Phase 3 product surface. */
 public final class Phase2QuestCommand implements CommandExecutor, TabCompleter {
     private static final List<String> JOURNAL_ROOTS = List.of(
-            "overview", "active", "available", "categories", "tracked", "completed", "statistics", "help",
-            "track", "untrack");
+            "overview", "active", "available", "eligible", "tracked", "completed", "help",
+            "daily", "weekly", "milestones", "history", "track", "untrack");
 
     private final QuestCommand delegate;
     private final Phase2JournalService journal;
@@ -60,10 +61,13 @@ public final class Phase2QuestCommand implements CommandExecutor, TabCompleter {
         if (sender instanceof Player player && sender.hasPermission("plexonquests.use")) {
             switch (root) {
                 case "active" -> { journal.openActive(player); return true; }
-                case "available" -> { journal.openAvailable(player, 0, null); return true; }
+                case "available", "eligible" -> { journal.openAvailable(player, 0, null); return true; }
+                case "daily" -> { journal.openAvailable(player, 0, null, QuestScope.DAILY); return true; }
+                case "weekly" -> { journal.openAvailable(player, 0, null, QuestScope.WEEKLY); return true; }
+                case "milestones", "milestone" -> { journal.openAvailable(player, 0, null, QuestScope.MILESTONE); return true; }
                 case "categories" -> { journal.openCategories(player); return true; }
-                case "tracked" -> { journal.openTracked(player); return true; }
-                case "completed" -> { journal.openCompleted(player); return true; }
+                case "tracked", "pinned" -> { journal.openTracked(player); return true; }
+                case "completed", "history" -> { journal.openCompleted(player); return true; }
                 case "statistics", "stats" -> { journal.openStatistics(player); return true; }
                 case "help" -> { journal.openHelp(player); return true; }
                 case "track" -> { return track(player, args); }
