@@ -71,6 +71,7 @@ public final class Phase2JournalService implements Listener {
             37, 38, 39, 40, 41, 42, 43);
     private static final List<Integer> DETAIL_OBJECTIVES = List.of(10, 11, 12, 13, 14, 15, 16);
     private static final List<Integer> DETAIL_REWARDS = List.of(28, 29, 30, 31, 32, 33, 34);
+    private static final long CLICK_DEBOUNCE_NANOS = Duration.ofMillis(250).toNanos();
     private static final DateTimeFormatter HISTORY_DATE = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
             .withZone(ZoneId.systemDefault());
 
@@ -167,7 +168,7 @@ public final class Phase2JournalService implements Listener {
                 "<gray>Active, Eligible, Tracked and rewards.",
                 "<gray>Learn how Daily, Weekly and Milestone quests work.",
                 "", "<dark_gray>Click for help"), false, (p, c) -> openHelp(p));
-        item(holder, 49, Material.NETHER_STAR, "<yellow><bold>" + safe(model.nextAction().label()) + "</bold>",
+        item(holder, 53, Material.NETHER_STAR, "<yellow><bold>" + safe(model.nextAction().label()) + "</bold>",
                 List.of("<dark_gray>Recommended next step"), true, (p, c) -> runNextAction(p, model.nextAction()));
         close(holder);
         player.openInventory(holder.inventory);
@@ -278,7 +279,7 @@ public final class Phase2JournalService implements Listener {
                 "<gray>Daily • Weekly • Milestone • Assigned",
                 "", "<dark_gray>Click to change scope"), false,
                 (p, c) -> openAvailable(p, actual.withScope(nextScope(actual.scope()))));
-        item(holder, 50, Material.BOOKSHELF, "<light_purple><bold>Category: " + categoryLabel(actual.category()) + "</bold>", List.of(
+        item(holder, 51, Material.BOOKSHELF, "<light_purple><bold>Category: " + categoryLabel(actual.category()) + "</bold>", List.of(
                 "<gray>Browse one configured category at a time.",
                 "", "<dark_gray>Click to change category"), false,
                 (p, c) -> openAvailable(p, actual.withCategory(nextCategory(actual.category()))));
@@ -305,12 +306,12 @@ public final class Phase2JournalService implements Listener {
                     "<gray>Open an active quest and choose Track.",
                     "", "<dark_gray>Click to view active quests"), false,
                     (p, c) -> openActive(p));
-            item(holder, 49, Material.WRITABLE_BOOK, "<gold><bold>View Active Quests</bold>", List.of(), false,
+            item(holder, 53, Material.WRITABLE_BOOK, "<gold><bold>View Active Quests</bold>", List.of(), false,
                     (p, c) -> openActive(p));
         } else {
             holder.inventory.setItem(22, assignmentCard(trackedAssignment, true));
             holder.actions.put(22, (p, c) -> openDetailsById(p, trackedAssignment.id(), context));
-            item(holder, 49, Material.LODESTONE, "<yellow><bold>Continue Tracked Quest</bold>", List.of(
+            item(holder, 53, Material.LODESTONE, "<yellow><bold>Continue Tracked Quest</bold>", List.of(
                     "<white>" + safe(plainName(trackedAssignment.definition())),
                     "", "<dark_gray>Click for quest details"), true,
                     (p, c) -> openDetailsById(p, trackedAssignment.id(), context));
@@ -475,19 +476,7 @@ public final class Phase2JournalService implements Listener {
                 && live.state() == AssignmentState.ACTIVE;
         Holder holder = create(parent, "<aqua><bold>Quest Details</bold>");
         topNavigation(holder, selectedForParent(parent));
-        List<String> headerLore = new ArrayList<>();
-        headerLore.add("<dark_gray>" + scopeLabel(live.definition().scope()) + " • " + safe(pretty(live.definition().category())));
-        if (!live.definition().display().shortDescription().isBlank()) {
-            headerLore.add("");
-            headerLore.add("<gray>" + safe(live.definition().display().shortDescription()));
-        }
-        headerLore.add("");
-        headerLore.add("<gray>Status " + assignmentStateColor(live.state()) + QuestStatePresentation.label(live.state()));
-        if (live.state() == AssignmentState.ACTIVE) {
-            headerLore.add("<gray>Tracking <yellow>" + QuestStatePresentation.tracking(trackedState));
-        }
-        item(holder, 4, live.definition().display().icon().material(),
-                live.definition().display().name(), headerLore, trackedState || live.state() == AssignmentState.COMPLETED, null);
+        renderDetailsHeader(holder, live, trackedState);
 
         List<ObjectiveProgress> objectives = live.objectives();
         int visibleObjectives = Math.min(objectives.size(), DETAIL_OBJECTIVES.size());
@@ -538,16 +527,9 @@ public final class Phase2JournalService implements Listener {
 
         back(holder, parent);
         if (live.state() == AssignmentState.COMPLETED && player.hasPermission("plexonquests.claim")) {
-            item(holder, 49, Material.EMERALD, "<green><bold>Claim Reward</bold>", List.of(
+            item(holder, 53, Material.EMERALD, "<green><bold>Claim Reward</bold>", List.of(
                     "<gray>Receive <white>" + safe(rewardSummary(live.definition())),
                     "", "<dark_gray>Click once to claim"), true, (p, c) -> claim(p, live.id(), parent, holder));
-        }
-        if (live.state() == AssignmentState.ACTIVE && player.hasPermission("plexonquests.pin")) {
-            item(holder, 50, Material.LODESTONE,
-                    trackedState ? "<yellow><bold>Untrack Quest</bold>" : "<yellow><bold>Track Quest</bold>", List.of(
-                            trackedState ? "<gray>Remove this quest from your tracked shortcut." : "<gray>Keep this quest easy to find.",
-                            "", "<dark_gray>Click to " + (trackedState ? "untrack" : "track")), trackedState,
-                    (p, c) -> toggleTracked(p, live.id(), parent, holder));
         }
         if (live.state() == AssignmentState.ACTIVE
                 && live.definition().scope().rotating()
@@ -559,11 +541,46 @@ public final class Phase2JournalService implements Listener {
                         openReroll(p, live, parent);
                     });
         }
-        item(holder, 51, stateMaterial(live.state()), "<white><bold>Status</bold>", List.of(
-                assignmentStateColor(live.state()) + QuestStatePresentation.label(live.state()),
-                live.state() == AssignmentState.ACTIVE ? "<yellow>Tracking: " + QuestStatePresentation.tracking(trackedState) : ""), false, null);
+        refreshTrackingPresentation(player, holder, live, parent);
         close(holder);
         player.openInventory(holder.inventory);
+    }
+
+    private void renderDetailsHeader(Holder holder, QuestAssignment live, boolean trackedState) {
+        List<String> headerLore = new ArrayList<>();
+        headerLore.add("<dark_gray>" + scopeLabel(live.definition().scope()) + " • " + safe(pretty(live.definition().category())));
+        if (!live.definition().display().shortDescription().isBlank()) {
+            headerLore.add("");
+            headerLore.add("<gray>" + safe(live.definition().display().shortDescription()));
+        }
+        headerLore.add("");
+        headerLore.add("<gray>Status " + assignmentStateColor(live.state()) + QuestStatePresentation.label(live.state()));
+        if (live.state() == AssignmentState.ACTIVE) {
+            headerLore.add("<gray>Tracking <yellow>" + QuestStatePresentation.tracking(trackedState));
+        }
+        item(holder, 4, live.definition().display().icon().material(),
+                live.definition().display().name(), headerLore, trackedState || live.state() == AssignmentState.COMPLETED, null);
+    }
+
+    private void refreshTrackingPresentation(
+            Player player, Holder holder, QuestAssignment live, JournalNavigationContext parent) {
+        PlayerProfile profile = profiles.profile(player).orElse(null);
+        boolean trackedState = profile != null
+                && profile.pinnedAssignment().filter(live.id()::equals).isPresent()
+                && live.state() == AssignmentState.ACTIVE;
+        renderDetailsHeader(holder, live, trackedState);
+        item(holder, 49, stateMaterial(live.state()), "<white><bold>Status</bold>", List.of(
+                assignmentStateColor(live.state()) + QuestStatePresentation.label(live.state()),
+                live.state() == AssignmentState.ACTIVE ? "<yellow>Tracking: " + QuestStatePresentation.tracking(trackedState) : ""), false, null);
+        if (live.state() == AssignmentState.ACTIVE && player.hasPermission("plexonquests.pin")) {
+            item(holder, 51, Material.LODESTONE,
+                    trackedState ? "<yellow><bold>Untrack Quest</bold>" : "<yellow><bold>Track Quest</bold>", List.of(
+                            trackedState ? "<gray>Remove this quest from your tracked shortcut." : "<gray>Keep this quest easy to find.",
+                            "", "<dark_gray>Click to " + (trackedState ? "untrack" : "track")), trackedState,
+                    (p, c) -> toggleTracked(p, live.id(), parent, holder));
+        } else {
+            holder.actions.remove(51);
+        }
     }
 
     private void openDefinition(Player player, String questId, JournalNavigationContext parent) {
@@ -610,7 +627,7 @@ public final class Phase2JournalService implements Listener {
                 state == JournalState.AVAILABLE ? "<gray>This quest is eligible for its normal assignment rule." : "<gray>" + safe(lockedReason(player, profile, definition, state))),
                 state == JournalState.AVAILABLE, null);
         back(holder, parent);
-        item(holder, 51, stateMaterial(state), "<white><bold>Status</bold>", List.of(
+        item(holder, 49, stateMaterial(state), "<white><bold>Status</bold>", List.of(
                 journalStateColor(state) + QuestStatePresentation.label(state)), false, null);
         close(holder);
         player.openInventory(holder.inventory);
@@ -634,7 +651,8 @@ public final class Phase2JournalService implements Listener {
 
     private void toggleTracked(
             Player player, UUID assignmentId, JournalNavigationContext parent, Holder holder) {
-        if (!holder.submit("track:" + assignmentId)) return;
+        String submission = "track:" + assignmentId;
+        if (!holder.submit(submission)) return;
         PlayerProfile profile = profiles.profile(player).orElse(null);
         QuestAssignment live = profile == null ? null : profile.assignment(assignmentId).orElse(null);
         if (live == null || live.state() != AssignmentState.ACTIVE) {
@@ -650,7 +668,8 @@ public final class Phase2JournalService implements Listener {
             case NOT_FOUND -> player.sendMessage(text.parse("<red>This quest changed while the menu was open."));
             case UNCHANGED -> { }
         }
-        openDetailsById(player, assignmentId, parent);
+        holder.release(submission);
+        refreshTrackingPresentation(player, holder, live, parent);
     }
 
     private void runNextAction(Player player, JournalNextAction action) {
@@ -691,7 +710,7 @@ public final class Phase2JournalService implements Listener {
         int slot = event.getRawSlot();
         if (slot < 0 || slot >= event.getView().getTopInventory().getSize()) return;
         Action action = holder.actions.get(slot);
-        if (action != null) action.run(player, event.getClick());
+        if (action != null && holder.acceptInteraction()) action.run(player, event.getClick());
     }
 
     @EventHandler(priority = EventPriority.HIGHEST)
@@ -913,8 +932,10 @@ public final class Phase2JournalService implements Listener {
         nav(holder, 0, Material.COMPASS, "Journal Home", JournalView.HOME, selected, this::openOverview);
         nav(holder, 1, Material.WRITABLE_BOOK, "Active", JournalView.ACTIVE, selected, this::openActive);
         nav(holder, 2, Material.ENDER_EYE, "Eligible", JournalView.ELIGIBLE, selected, p -> openAvailable(p, 0, null));
-        nav(holder, 3, Material.KNOWLEDGE_BOOK, "Completed", JournalView.COMPLETED, selected, this::openCompleted);
-        nav(holder, 4, Material.LODESTONE, "Tracked", JournalView.TRACKED, selected, this::openTracked);
+        item(holder, 4, sectionMaterial(selected), "<gradient:#F6C85F:#E9A83A><bold>" + sectionLabel(selected) + "</bold></gradient>",
+                List.of("<dark_gray>Quest Journal"), true, null);
+        nav(holder, 6, Material.KNOWLEDGE_BOOK, "Completed", JournalView.COMPLETED, selected, this::openCompleted);
+        nav(holder, 7, Material.LODESTONE, "Tracked", JournalView.TRACKED, selected, this::openTracked);
         nav(holder, 8, Material.PAPER, "Help", JournalView.HELP, selected, this::openHelp);
     }
 
@@ -929,23 +950,23 @@ public final class Phase2JournalService implements Listener {
     private void listControls(
             Holder holder, int page, int pages, Consumer<Player> previous, Consumer<Player> next) {
         if (previous != null) {
-            item(holder, 45, Material.ARROW, "<white><bold>Previous</bold>", List.of(
+            item(holder, 48, Material.ARROW, "<white><bold>Previous</bold>", List.of(
                     "<gray>Page " + page + " of " + pages), false, (p, c) -> previous.accept(p));
         }
-        item(holder, 51, Material.MAP, "<white><bold>Page " + (page + 1) + " / " + Math.max(1, pages) + "</bold>", List.of(), false, null);
+        item(holder, 49, Material.MAP, "<white><bold>Page " + (page + 1) + " / " + Math.max(1, pages) + "</bold>", List.of(), false, null);
         if (next != null) {
-            item(holder, 53, Material.ARROW, "<white><bold>Next</bold>", List.of(
+            item(holder, 50, Material.ARROW, "<white><bold>Next</bold>", List.of(
                     "<gray>Page " + (page + 2) + " of " + pages), false, (p, c) -> next.accept(p));
         }
     }
 
     private void back(Holder holder, JournalNavigationContext parent) {
-        item(holder, 48, Material.ARROW, "<white><bold>Back</bold>", List.of(
+        item(holder, 45, Material.ARROW, "<white><bold>Back</bold>", List.of(
                 "<gray>Return to the previous journal view."), false, (p, c) -> openContext(p, parent));
     }
 
     private void home(Holder holder) {
-        item(holder, 48, Material.COMPASS, "<white><bold>Journal Home</bold>", List.of(
+        item(holder, 45, Material.COMPASS, "<white><bold>Journal Home</bold>", List.of(
                 "<dark_gray>Return to your quest summary"), false, (p, c) -> openOverview(p));
     }
 
@@ -1036,6 +1057,32 @@ public final class Phase2JournalService implements Listener {
         return category == null ? "All" : pretty(category);
     }
 
+    private static String sectionLabel(JournalView view) {
+        return switch (view) {
+            case HOME -> "Quest Journal";
+            case ACTIVE -> "Active Quests";
+            case ELIGIBLE -> "Eligible Quests";
+            case COMPLETED -> "Completed Quests";
+            case TRACKED -> "Tracked Quest";
+            case HELP -> "Journal Help";
+            case DETAILS -> "Quest Details";
+            case REROLL_CONFIRMATION -> "Confirm Reroll";
+        };
+    }
+
+    private static Material sectionMaterial(JournalView view) {
+        return switch (view) {
+            case HOME -> Material.COMPASS;
+            case ACTIVE -> Material.WRITABLE_BOOK;
+            case ELIGIBLE -> Material.ENDER_EYE;
+            case COMPLETED -> Material.KNOWLEDGE_BOOK;
+            case TRACKED -> Material.LODESTONE;
+            case HELP -> Material.PAPER;
+            case DETAILS -> Material.BOOK;
+            case REROLL_CONFIRMATION -> Material.ENDER_PEARL;
+        };
+    }
+
     private static JournalView selectedForParent(JournalNavigationContext parent) {
         if (parent == null) return JournalView.HOME;
         return switch (parent.view()) {
@@ -1117,13 +1164,25 @@ public final class Phase2JournalService implements Listener {
         private final Map<Integer, Action> actions = new HashMap<>();
         private final Set<String> submissions = new HashSet<>();
         private Inventory inventory;
+        private long lastInteractionNanos;
 
         private Holder(JournalNavigationContext context) {
             this.context = context;
         }
 
+        private boolean acceptInteraction() {
+            long now = System.nanoTime();
+            if (now - lastInteractionNanos < CLICK_DEBOUNCE_NANOS) return false;
+            lastInteractionNanos = now;
+            return true;
+        }
+
         private boolean submit(String key) {
             return submissions.add(key);
+        }
+
+        private void release(String key) {
+            submissions.remove(key);
         }
 
         @Override
