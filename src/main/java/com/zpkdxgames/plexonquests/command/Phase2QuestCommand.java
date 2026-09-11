@@ -2,7 +2,11 @@ package com.zpkdxgames.plexonquests.command;
 
 import com.zpkdxgames.plexonquests.gui.Phase2JournalService;
 import com.zpkdxgames.plexonquests.presentation.TextService;
+import com.zpkdxgames.plexonquests.quest.AssignmentState;
+import com.zpkdxgames.plexonquests.quest.QuestAssignment;
 import com.zpkdxgames.plexonquests.quest.QuestScope;
+import com.zpkdxgames.plexonquests.service.PlayerProfile;
+import com.zpkdxgames.plexonquests.service.ProfileService;
 import com.zpkdxgames.plexonquests.service.QuestTrackingService;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -21,11 +25,12 @@ import org.jetbrains.annotations.Nullable;
 /** 4.x compatibility layer that routes player journal commands into the unified Phase 3 product surface. */
 public final class Phase2QuestCommand implements CommandExecutor, TabCompleter {
     private static final List<String> JOURNAL_ROOTS = List.of(
-            "overview", "active", "available", "eligible", "tracked", "completed", "help",
-            "daily", "weekly", "milestones", "history", "track", "untrack");
+            "overview", "active", "eligible", "tracked", "completed", "help",
+            "daily", "weekly", "milestones", "reroll", "track", "untrack");
 
     private final QuestCommand delegate;
     private final Phase2JournalService journal;
+    private final ProfileService profiles;
     private final QuestTrackingService tracking;
     private final Phase2Diagnostics diagnostics;
     private final TextService text;
@@ -34,11 +39,13 @@ public final class Phase2QuestCommand implements CommandExecutor, TabCompleter {
     public Phase2QuestCommand(
             QuestCommand delegate,
             Phase2JournalService journal,
+            ProfileService profiles,
             QuestTrackingService tracking,
             Phase2Diagnostics diagnostics,
             TextService text) {
         this.delegate = delegate;
         this.journal = journal;
+        this.profiles = profiles;
         this.tracking = tracking;
         this.diagnostics = diagnostics;
         this.text = text;
@@ -70,12 +77,13 @@ public final class Phase2QuestCommand implements CommandExecutor, TabCompleter {
                 case "completed", "history" -> { journal.openCompleted(player); return true; }
                 case "statistics", "stats" -> { journal.openStatistics(player); return true; }
                 case "help" -> { journal.openHelp(player); return true; }
+                case "reroll" -> { return reroll(player, args); }
                 case "track" -> { return track(player, args); }
                 case "untrack" -> { return untrack(player); }
                 default -> { }
             }
-        } else if (root.equals("track") || root.equals("untrack")) {
-            sender.sendMessage(text.parse("<red>You do not have permission to change quest tracking."));
+        } else if (root.equals("track") || root.equals("untrack") || root.equals("reroll")) {
+            sender.sendMessage(text.parse("<red>You do not have permission to use that quest action."));
             return true;
         }
 
@@ -98,6 +106,26 @@ public final class Phase2QuestCommand implements CommandExecutor, TabCompleter {
             diagnostics.append(sender);
         }
         return handled;
+    }
+
+    private boolean reroll(Player player, String[] args) {
+        if (!player.hasPermission("plexonquests.reroll")) {
+            player.sendMessage(text.parse("<red>You do not have permission to reroll quests."));
+            return true;
+        }
+        PlayerProfile profile = profiles.profile(player).orElse(null);
+        if (profile == null) {
+            player.sendMessage(text.parse("<yellow>Your quest profile is still loading."));
+            return true;
+        }
+        String token = args.length > 1 ? args[1] : "";
+        QuestAssignment assignment = resolveActive(profile, token);
+        if (assignment == null || !assignment.definition().scope().rotating()) {
+            player.sendMessage(text.parse("<red>No matching active rotating quest was found."));
+            return true;
+        }
+        journal.openReroll(player, assignment);
+        return true;
     }
 
     private boolean track(Player player, String[] args) {
@@ -131,7 +159,8 @@ public final class Phase2QuestCommand implements CommandExecutor, TabCompleter {
             @NotNull Command command,
             @NotNull String alias,
             @NotNull String[] args) {
-        if (args.length == 2 && args[0].equalsIgnoreCase("track") && sender instanceof Player player) {
+        if (args.length == 2 && (args[0].equalsIgnoreCase("track") || args[0].equalsIgnoreCase("reroll"))
+                && sender instanceof Player player) {
             return filter(player, args[1]);
         }
         List<String> delegated = delegate.onTabComplete(sender, command, alias, args);
@@ -141,14 +170,46 @@ public final class Phase2QuestCommand implements CommandExecutor, TabCompleter {
         String prefix = args[0].toLowerCase(Locale.ROOT);
         Set<String> merged = new LinkedHashSet<>();
         if (delegated != null) merged.addAll(delegated);
+        merged.remove("pinned");
+        merged.remove("history");
         JOURNAL_ROOTS.stream().filter(value -> value.startsWith(prefix)).forEach(merged::add);
         return new ArrayList<>(merged);
     }
 
     private List<String> filter(Player player, String prefix) {
         String lowered = prefix.toLowerCase(Locale.ROOT);
-        return player.hasPermission("plexonquests.pin")
+        return player.hasPermission("plexonquests.pin") || player.hasPermission("plexonquests.reroll")
                 ? journal.activeQuestIds(player).stream().filter(id -> id.startsWith(lowered)).toList()
                 : List.of();
+    }
+
+    private static QuestAssignment resolveActive(PlayerProfile profile, String token) {
+        List<QuestAssignment> visible = profile.visibleAssignments();
+        if (token == null || token.isBlank()) {
+            QuestAssignment tracked = profile.pinnedAssignment().flatMap(profile::assignment)
+                    .filter(assignment -> assignment.state() == AssignmentState.ACTIVE)
+                    .orElse(null);
+            if (tracked != null) {
+                return tracked;
+            }
+            return visible.stream().filter(assignment -> assignment.state() == AssignmentState.ACTIVE)
+                    .findFirst().orElse(null);
+        }
+        try {
+            int index = Integer.parseInt(token) - 1;
+            if (index >= 0 && index < visible.size()) {
+                QuestAssignment selected = visible.get(index);
+                return selected.state() == AssignmentState.ACTIVE ? selected : null;
+            }
+        } catch (NumberFormatException ignored) {
+            // Continue with UUID/quest ID resolution.
+        }
+        String lowered = token.toLowerCase(Locale.ROOT);
+        List<QuestAssignment> matches = visible.stream()
+                .filter(assignment -> assignment.state() == AssignmentState.ACTIVE)
+                .filter(assignment -> assignment.id().toString().startsWith(lowered)
+                        || assignment.definition().id().equals(lowered))
+                .toList();
+        return matches.size() == 1 ? matches.getFirst() : null;
     }
 }
