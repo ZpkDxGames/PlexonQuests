@@ -6,7 +6,7 @@
 
   <groupId>com.zpkdxgames</groupId>
   <artifactId>PlexonQuests</artifactId>
-  <version>4.0.0-rc.2</version>
+  <version>4.0.0-rc.3</version>
   <packaging>jar</packaging>
 
   <name>PlexonQuests</name>

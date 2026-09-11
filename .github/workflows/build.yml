@@ -35,7 +35,7 @@ jobs:
         run: |
           set -euo pipefail
           version=$(mvn -q -DforceStdout help:evaluate -Dexpression=project.version)
-          test "$version" = "4.0.0-rc.2"
+          test "$version" = "4.0.0-rc.3"
           echo "PLEXONQUESTS_VERSION=${version}" >> "$GITHUB_ENV"
       - name: Verify
         run: mvn -B -ntp clean verify
