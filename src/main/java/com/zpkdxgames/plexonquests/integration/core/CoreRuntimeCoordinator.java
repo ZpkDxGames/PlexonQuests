@@ -9,8 +9,10 @@ import java.io.File;
 import java.util.ArrayDeque;
 import java.util.EnumSet;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Consumer;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.configuration.file.YamlConfiguration;
@@ -35,6 +37,7 @@ public final class CoreRuntimeCoordinator implements AutoCloseable {
     private final AtomicLong shadowMismatches = new AtomicLong();
     private CoreRuntime.Subscription subscription;
     private ConfigSnapshot subscriptionSnapshot;
+    private Consumer<CoreRuntime.BlockFact> committedBlockConsumer;
     private Mode requestedMode = Mode.AUTO;
     private boolean active;
     private int subscribedMaterials;
@@ -85,6 +88,18 @@ public final class CoreRuntimeCoordinator implements AutoCloseable {
                 + "; origin provider=" + originProvider() + '.');
     }
 
+    /**
+     * Binds the committed Core fact consumer used when PlexonCore is authoritative for block origin.
+     * LOCAL and SHADOW modes deliberately retain the legacy Bukkit correlation path because they
+     * still need the mutable/local provenance lifecycle for compatibility and migration comparison.
+     */
+    public void bindCommittedBlockConsumer(Consumer<CoreRuntime.BlockFact> consumer) {
+        committedBlockConsumer = Objects.requireNonNull(consumer, "consumer");
+        if (directCommittedRouting()) {
+            pending.get().clear();
+        }
+    }
+
     private void receive(CoreRuntime.BlockFact fact) {
         received.incrementAndGet();
         if (!Bukkit.isPrimaryThread()) {
@@ -92,16 +107,28 @@ public final class CoreRuntimeCoordinator implements AutoCloseable {
             plugin.getLogger().warning("Ignored asynchronous PlexonCore block callback; quest progress remains main-thread owned");
             return;
         }
+
+        Consumer<CoreRuntime.BlockFact> direct = committedBlockConsumer;
+        if (direct != null && coreOriginAuthoritative()) {
+            try {
+                direct.accept(fact);
+                consumed.incrementAndGet();
+            } catch (RuntimeException | Error failure) {
+                callbackFailures.incrementAndGet();
+                throw failure;
+            }
+            return;
+        }
+
         pending.get().addLast(fact);
     }
 
     /**
-     * Consumes the Core fact matching this exact Bukkit event. PlexonCore 2.0.2 dispatches its
-     * callback at final MONITOR and suppresses finally-cancelled breaks; the local listener keeps an
-     * additional cancellation check as a defensive quest-side invariant.
+     * Consumes the Core fact matching this exact Bukkit event for LOCAL/SHADOW compatibility paths.
+     * Authoritative Core mode bypasses this correlation hop and delivers the committed fact directly.
      */
     public CoreRuntime.BlockFact consume(BlockBreakEvent event) {
-        if (!active) return null;
+        if (!active || directCommittedRouting()) return null;
         ArrayDeque<CoreRuntime.BlockFact> facts = pending.get();
         CoreRuntime.BlockFact fact = facts.peekLast();
         if (fact == null || !matches(fact, event)) {
@@ -140,6 +167,7 @@ public final class CoreRuntimeCoordinator implements AutoCloseable {
     public boolean originMigrationAvailable() { return active && core.runtime().originImportAvailable(); }
     public boolean coreOriginAuthoritative() { return originMigrationAvailable() && requestedMode != Mode.SHADOW; }
     public boolean localOriginAuthoritative() { return !coreOriginAuthoritative(); }
+    public boolean directCommittedRouting() { return committedBlockConsumer != null && coreOriginAuthoritative(); }
     public String originProvider() { return shadowMode() ? "SHADOW" : (coreOriginAuthoritative() ? "CORE" : "LOCAL"); }
 
     public String acquisitionMode() {
@@ -196,6 +224,7 @@ public final class CoreRuntimeCoordinator implements AutoCloseable {
     @Override
     public void close() {
         closeSubscription();
+        committedBlockConsumer = null;
         pending.remove();
         active = false;
         epoch.incrementAndGet();
