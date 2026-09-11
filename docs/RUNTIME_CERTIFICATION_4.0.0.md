@@ -1,21 +1,19 @@
 # PlexonQuests 4.0.0 PlexonCraft Runtime Certification
 
-Stable `v4.0.0` is blocked until every required gate below passes on PlexonCraft with the exact frozen candidate JAR and zero HIGH/CRITICAL defects.
+This checklist is the **post-release deployment/soak matrix** for stable `v4.0.0`. GitHub source/release closure does not require live PlexonCraft access; release provenance may therefore record `runtime_certification=NOT_EXECUTED`.
 
-## Candidate identity
+Use this matrix before or during production cutover when live operational certification is required. Test the exact published stable JAR; do not certify a local rebuild and deploy different bytes.
+
+## Stable artifact identity
 
 Record before testing:
 
-- branch and exact commit SHA;
-- GitHub prerelease tag;
+- stable tag and exact source SHA;
 - JAR filename and byte size;
 - SHA-256 from `SHA256SUMS.txt`;
-- Paper build;
-- Java version;
+- Paper build and Java version;
 - PlexonCore version;
-- versions of every enabled optional integration.
-
-Do not test an uncommitted/local rebuild and then promote a different artifact.
+- versions of enabled optional integrations.
 
 ## Migration gate
 
@@ -31,45 +29,40 @@ Do not test an uncommitted/local rebuild and then promote a different artifact.
 
 Validate `/quests` plus:
 
-- Overview;
+- Journal Home;
 - Active Quests;
-- Available Quests;
-- Categories;
-- Tracked Quest;
+- Eligible Quests;
 - Completed / History;
-- Statistics;
+- Tracked Quest;
+- Quest Details;
 - Help;
 - concise quest cards and details;
 - prerequisite display;
 - reward preview;
 - terminal/completed states;
-- stable Back/Close controls.
+- final shared control geometry: Back/Home 45, Previous 48, page/context 49, Next 50, primary action 53;
+- rapid-click debounce and in-place Track/Untrack refresh.
 
 ## State and prerequisite gate
 
-- `LOCKED` when prerequisites are incomplete;
-- `AVAILABLE` when eligible and unassigned;
-- `ACTIVE` after authoritative assignment;
-- `TRACKED` after right-click tracking;
-- `COMPLETABLE` when all objective requirements are complete;
-- `COMPLETED` for completed non-rotating progression;
-- `COOLDOWN` for a completed rotating quest in its period;
-- `EXPIRED` where applicable;
-- `DISABLED` definitions do not activate;
+- locked definitions remain inaccessible until prerequisites complete;
+- eligible definitions enter only their authoritative assignment mechanism;
+- active/tracked/completable/completed/cooldown/expired presentation matches authoritative state;
+- disabled definitions do not activate;
 - invalid/missing/cyclic prerequisite edits are rejected with diagnostics;
-- reconnect/restart does not briefly auto-assign a prerequisite-locked quest before history is loaded.
+- reconnect/restart does not briefly auto-assign a prerequisite-locked quest before history is ready.
 
 ## Objective gate
 
-Exercise every supported objective type present in the candidate catalog/engine, including mixed-objective quests and progress bounds. Confirm:
+Exercise every supported objective type present in the deployed catalog/engine, including mixed-objective quests and progress bounds. Confirm:
 
 - no duplicate contribution credit;
 - final-cancelled events do not credit;
 - indexed interest limits work to relevant players/objectives;
 - no global quest scan is introduced by the journal;
-- player placed blocks do not satisfy natural-only objectives;
+- player-placed blocks do not satisfy natural-only objectives;
 - unknown origin fails closed where required;
-- PlexonSpawners provenance, when tested with its compatible candidate API, does not double-credit or trust fake/NPC/custom entities incorrectly.
+- compatible Plexon integration events do not double-credit.
 
 ## Reward and transaction gate
 
@@ -78,13 +71,13 @@ Exercise every supported objective type present in the candidate catalog/engine,
 - duplicate-event/reconnect rejection;
 - full inventory policy;
 - exact custom ItemStack/PDC/components preservation;
-- Vault/Theosis economy rewards;
+- Vault/Theosis economy rewards where configured;
 - XP/item/command/permission and supported first-party reward types;
 - reward preflight failure;
-- reversible delivery exception;
-- irreversible boundary behavior;
+- reversible-delivery exception;
+- irreversible command/key boundary behavior;
 - restart/retry idempotency;
-- uncertain claim diagnostic/recovery behavior.
+- uncertain-claim diagnostic/recovery behavior.
 
 ## Rotation/repeat gate
 
@@ -101,14 +94,11 @@ For daily/weekly behavior:
 ## Admin gate
 
 - inspect/diagnostics;
-- targeted reset stages confirmation;
-- force-complete stages confirmation;
-- cancel stages confirmation;
-- another administrator cannot consume the confirmation;
+- targeted reset/force-complete/cancel confirmation;
+- another administrator cannot consume another actor's confirmation;
 - different target/action cannot consume it;
-- expired confirmation cannot execute;
-- used confirmation cannot execute twice;
-- target state is revalidated by the authoritative handler immediately before mutation;
+- expired/used confirmation cannot execute;
+- target state is revalidated immediately before mutation;
 - audit history records successful mutations;
 - invalid reload retains known-good behavior.
 
@@ -126,7 +116,7 @@ For daily/weekly behavior:
 
 Validate installed Plexon integrations against their actual public API contracts. Missing/incompatible optional providers must fail closed rather than disabling PlexonQuests or fabricating progress.
 
-With PlexonCore 2.0.4, verify `/plexon modules`, `/plexon diagnostics`, `/quests diagnostics`, shared acquisition mode, shared origin provider, fallback counters, and no duplicate local+Core objective authority.
+With PlexonCore 2.0.4, verify `/plexon modules`, `/plexon diagnostics`, `/quests diagnostics`, shared acquisition mode, shared origin provider, fallback counters and no duplicate local+Core objective authority.
 
 ## Persistence / reload gate
 
@@ -134,13 +124,13 @@ With PlexonCore 2.0.4, verify `/plexon modules`, `/plexon diagnostics`, `/quests
 - shutdown flush;
 - SQLite WAL/checkpoint health;
 - bounded writer queue health;
-- no synchronous DB query in objective, GUI-open, or PlaceholderAPI hot paths;
+- no synchronous DB query in objective, journal-open or PlaceholderAPI hot paths;
 - corrupt candidate configuration does not partially activate;
 - malformed player state is diagnosed rather than silently wiped.
 
 ## Performance gate
 
-Capture comparable Spark evidence before and after the candidate under the same player/tool/objective workload:
+Capture comparable Spark evidence under the same player/tool/objective workload:
 
 - TPS;
 - MSPT median/p95/p99 where available;
@@ -149,24 +139,21 @@ Capture comparable Spark evidence before and after the candidate under the same 
 - scheduled task count;
 - allocation/hot-path regressions.
 
-Reject the candidate for a meaningful unexplained MSPT regression.
+Investigate any meaningful unexplained MSPT regression before wider production rollout.
 
 ## Soak gate
 
-Run the exact candidate for at least 30 continuous minutes with representative quest progress, GUI use, reward claims, rotations/integrations, reconnects, and at least one restart/reload sequence.
+Run the exact stable JAR for at least 30 continuous minutes with representative quest progress, journal use, reward claims, rotations/integrations, reconnects and at least one restart/reload sequence.
 
-Required result:
+Target result:
 
-- no HIGH defects;
-- no CRITICAL defects;
+- no HIGH/CRITICAL defect;
 - no duplicate rewards/progress;
 - no data loss;
 - no unbounded queue/task growth;
 - no repeating console error;
 - no material performance regression.
 
-## Certification decision
+## Operational decision
 
-Only after every applicable gate passes may the draft Phase 2 PR be considered for merge and `v4.0.0` stable promotion. Until then the repository state is:
-
-`RC RELEASED / RUNTIME PENDING`
+A failed live gate blocks or rolls back the **deployment**, not the already verified GitHub source/release lineage. Preserve the published stable artifact and open a new remediation version if a real runtime defect is proven.
