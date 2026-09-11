@@ -27,18 +27,15 @@ jobs:
         run: |
           set -euo pipefail
           core_jar="${RUNNER_TEMP}/PlexonCore-2.0.4.jar"
-          curl --fail --location --silent --show-error --output "${core_jar}" \
-            "https://github.com/ZpkDxGames/PlexonCore/releases/download/v2.0.4/PlexonCore-2.0.4.jar"
+          curl --fail --location --silent --show-error --output "${core_jar}" "https://github.com/ZpkDxGames/PlexonCore/releases/download/v2.0.4/PlexonCore-2.0.4.jar"
           echo "61d625a717da9f46ee9231e1970d84b4c317ae12cf4090cdf7c9d39b6a1a9baf  ${core_jar}" | sha256sum --check
-          mvn -B -ntp org.apache.maven.plugins:maven-install-plugin:3.1.4:install-file \
-            -Dfile="${core_jar}" -DgroupId=com.zpkdxgames -DartifactId=PlexonCore \
-            -Dversion=2.0.4 -Dpackaging=jar -DgeneratePom=true
+          mvn -B -ntp org.apache.maven.plugins:maven-install-plugin:3.1.4:install-file -Dfile="${core_jar}" -DgroupId=com.zpkdxgames -DartifactId=PlexonCore -Dversion=2.0.4 -Dpackaging=jar -DgeneratePom=true
       - name: Resolve candidate version
         shell: bash
         run: |
           set -euo pipefail
           version=$(mvn -q -DforceStdout help:evaluate -Dexpression=project.version)
-          test "$version" = "4.0.0-rc.1"
+          test "$version" = "4.0.0-rc.2"
           echo "PLEXONQUESTS_VERSION=${version}" >> "$GITHUB_ENV"
       - name: Verify
         run: mvn -B -ntp clean verify
@@ -48,41 +45,25 @@ jobs:
           set -euo pipefail
           version="${PLEXONQUESTS_VERSION}"
           test "$(java -version 2>&1 | head -n 1 | grep -o '25\.[^" ]*' | cut -d. -f1)" = "25"
+          test "$(mvn -q -DforceStdout help:evaluate -Dexpression=paper.version)" = "26.2.build.121-stable"
           test "$(mvn -q -DforceStdout help:evaluate -Dexpression=plexoncore.version)" = "2.0.4"
           jar_path="target/PlexonQuests-${version}.jar"
           test -s "${jar_path}"
           jar tf "${jar_path}" > target/jar-contents.txt
-          for resource in plugin.yml config.yml messages.yml menus.yml effects.yml rarities.yml quests/daily/stonebound.yml; do
-            grep -qx "$resource" target/jar-contents.txt
-          done
+          for resource in plugin.yml config.yml messages.yml menus.yml effects.yml rarities.yml quests/daily/stonebound.yml; do grep -qx "$resource" target/jar-contents.txt; done
           grep -qx 'org/sqlite/JDBC.class' target/jar-contents.txt
           grep -q '^com/zpkdxgames/plexonquests/integration/core/PlexonCore2Runtime.class$' target/jar-contents.txt
           unzip -p "$jar_path" plugin.yml | grep -F "version: '${version}'"
-          for prefix in \
-            'com/zpkdxgames/plexoncore/' \
-            'me/clip/placeholderapi/' \
-            'org/bukkit/' \
-            'net/kyori/adventure/' \
-            'net/luckperms/api/' \
-            'net/milkbowl/vault/'; do
-            if grep -q "^${prefix}" target/jar-contents.txt; then
-              echo "Provided/optional dependency classes must not be shaded: ${prefix}" >&2
-              exit 1
-            fi
-          done
+          unzip -p "$jar_path" plugin.yml | grep -F "api-version: '26.2'"
+          for prefix in 'com/zpkdxgames/plexoncore/' 'me/clip/placeholderapi/' 'org/bukkit/' 'net/kyori/adventure/' 'net/luckperms/api/' 'net/milkbowl/vault/'; do if grep -q "^${prefix}" target/jar-contents.txt; then echo "Provided/optional dependency classes must not be shaded: ${prefix}" >&2; exit 1; fi; done
           JAR_PATH="$jar_path" python3 - <<'PY'
           import os, zipfile
-          jar = os.environ['JAR_PATH']
-          with zipfile.ZipFile(jar) as archive:
-              data = archive.read('com/zpkdxgames/plexonquests/PlexonQuestsPlugin.class')
-          major = int.from_bytes(data[6:8], 'big')
-          if major != 69:
-              raise SystemExit(f'Expected Java 25 class major 69, got {major}')
+          with zipfile.ZipFile(os.environ['JAR_PATH']) as a: data=a.read('com/zpkdxgames/plexonquests/PlexonQuestsPlugin.class')
+          major=int.from_bytes(data[6:8],'big')
+          if major != 69: raise SystemExit(f'Expected Java 25 class major 69, got {major}')
           print(f'Java class major: {major}')
           PY
-          cd target
-          sha256sum "PlexonQuests-${version}.jar" > SHA256SUMS.txt
-          sha256sum --check SHA256SUMS.txt
+          cd target && sha256sum "PlexonQuests-${version}.jar" > SHA256SUMS.txt && sha256sum --check SHA256SUMS.txt
       - name: Generate test and provenance reports
         shell: bash
         run: |
@@ -90,30 +71,19 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           import xml.etree.ElementTree as ET
-          totals = dict(tests=0, failures=0, errors=0, skipped=0)
-          for report in Path('target/surefire-reports').glob('TEST-*.xml'):
-              root = ET.parse(report).getroot()
-              for key in totals:
-                  totals[key] += int(root.attrib.get(key, 0))
-          Path('target/TEST_SUMMARY.txt').write_text(
-              f"executed={totals['tests']}\nfailures={totals['failures']}\nerrors={totals['errors']}\nskipped={totals['skipped']}\n"
-          )
+          totals=dict(tests=0,failures=0,errors=0,skipped=0)
+          reports=list(Path('target/surefire-reports').glob('TEST-*.xml'))
+          if not reports: raise SystemExit('No JUnit XML results found')
+          for report in reports:
+              root=ET.parse(report).getroot()
+              for key in totals: totals[key]+=int(root.attrib.get(key,0))
+          if totals['tests'] == 0 or any(totals[k] for k in ('failures','errors','skipped')): raise SystemExit(str(totals))
+          Path('target/TEST_SUMMARY.txt').write_text(f"executed={totals['tests']}\nfailures={totals['failures']}\nerrors={totals['errors']}\nskipped={totals['skipped']}\n")
+          print(totals)
           PY
-          jar="target/PlexonQuests-${PLEXONQUESTS_VERSION}.jar"
-          digest=$(sha256sum "$jar" | awk '{print $1}')
-          size=$(stat -c '%s' "$jar")
-          {
-            echo "repository=${GITHUB_REPOSITORY}"
-            echo "commit=${GITHUB_SHA}"
-            echo "version=${PLEXONQUESTS_VERSION}"
-            echo "java_major=69"
-            echo "plexoncore=2.0.4"
-            echo "jar=$(basename "$jar")"
-            echo "jar_size=${size}"
-            echo "jar_sha256=${digest}"
-          } > target/PROVENANCE.txt
-          cat target/TEST_SUMMARY.txt
-          cat target/PROVENANCE.txt
+          jar="target/PlexonQuests-${PLEXONQUESTS_VERSION}.jar"; digest=$(sha256sum "$jar" | awk '{print $1}'); size=$(stat -c '%s' "$jar")
+          { echo "repository=${GITHUB_REPOSITORY}"; echo "commit=${GITHUB_SHA}"; echo "accepted_phase3=e59eaa5d655f912cdad6dc43669ee644b5130fc3"; echo "performance_ancestor=38be2038e3c2674724665dbe3cc5e93b7af619f9"; echo "version=${PLEXONQUESTS_VERSION}"; echo "java_major=69"; echo "paper=26.2.build.121-stable"; echo "plexoncore=2.0.4"; echo "jar=$(basename "$jar")"; echo "jar_size=${size}"; echo "jar_sha256=${digest}"; echo "runtime_certification=NOT_EXECUTED"; } > target/PROVENANCE.txt
+          cat target/TEST_SUMMARY.txt; cat target/PROVENANCE.txt
       - uses: actions/upload-artifact@v4
         with:
           name: PlexonQuests-${{ env.PLEXONQUESTS_VERSION }}-Core-2.0.4-${{ github.sha }}
