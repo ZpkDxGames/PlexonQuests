@@ -13,7 +13,8 @@ import org.jetbrains.annotations.Nullable;
 
 /** Adds Core 2 runtime diagnostics without changing the established quest command implementation. */
 public final class RuntimeAwareQuestCommand implements CommandExecutor, TabCompleter {
-    private final QuestCommand delegate;
+    private final CommandExecutor delegate;
+    private final TabCompleter completer;
     private final CoreRuntimeCoordinator runtime;
     private final CoreOriginMigrator migrator;
     private final TextService text;
@@ -23,7 +24,17 @@ public final class RuntimeAwareQuestCommand implements CommandExecutor, TabCompl
             CoreRuntimeCoordinator runtime,
             CoreOriginMigrator migrator,
             TextService text) {
+        this(delegate, delegate, runtime, migrator, text);
+    }
+
+    public RuntimeAwareQuestCommand(
+            CommandExecutor delegate,
+            TabCompleter completer,
+            CoreRuntimeCoordinator runtime,
+            CoreOriginMigrator migrator,
+            TextService text) {
         this.delegate = delegate;
+        this.completer = completer;
         this.runtime = runtime;
         this.migrator = migrator;
         this.text = text;
@@ -87,6 +98,6 @@ public final class RuntimeAwareQuestCommand implements CommandExecutor, TabCompl
             @NotNull Command command,
             @NotNull String alias,
             @NotNull String[] args) {
-        return delegate.onTabComplete(sender, command, alias, args);
+        return completer.onTabComplete(sender, command, alias, args);
     }
 }

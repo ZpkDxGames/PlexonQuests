@@ -1,7 +1,7 @@
 package com.zpkdxgames.plexonquests.api;
 
 import com.zpkdxgames.plexonquests.config.ConfigManager;
-import com.zpkdxgames.plexonquests.gui.MenuService;
+import com.zpkdxgames.plexonquests.gui.Phase2JournalService;
 import com.zpkdxgames.plexonquests.integration.IntegrationManager;
 import com.zpkdxgames.plexonquests.objective.Contribution;
 import com.zpkdxgames.plexonquests.objective.ObjectiveType;
@@ -32,7 +32,7 @@ public final class PlexonQuestsAPIImpl implements PlexonQuestsAPI {
     private final ProfileService profiles;
     private final AssignmentService assignments;
     private final ProgressService progress;
-    private final MenuService menus;
+    private final Phase2JournalService journal;
     private final IntegrationManager integrations;
 
     public PlexonQuestsAPIImpl(
@@ -41,14 +41,14 @@ public final class PlexonQuestsAPIImpl implements PlexonQuestsAPI {
             ProfileService profiles,
             AssignmentService assignments,
             ProgressService progress,
-            MenuService menus,
+            Phase2JournalService journal,
             IntegrationManager integrations) {
         this.plugin = plugin;
         this.configs = configs;
         this.profiles = profiles;
         this.assignments = assignments;
         this.progress = progress;
-        this.menus = menus;
+        this.journal = journal;
         this.integrations = integrations;
     }
 
@@ -176,7 +176,11 @@ public final class PlexonQuestsAPIImpl implements PlexonQuestsAPI {
             Player player = Bukkit.getPlayer(playerId);
             if (player != null && player.hasPermission("plexonquests.use")) {
                 QuestScope scope = parseScope(rawScope);
-                menus.openJournal(player, scope);
+                if (scope == null) {
+                    journal.openOverview(player);
+                } else {
+                    journal.openActive(player, 0, scope);
+                }
             }
             return null;
         });

@@ -1,7 +1,7 @@
 name: PlexonQuests
 version: '${project.version}'
 main: com.zpkdxgames.plexonquests.PlexonQuestsPlugin
-description: GUI-first, performance-minded quests and challenges for Paper.
+description: Premium quest journal, progression, rewards, and history for Paper.
 api-version: '26.2'
 load: POSTWORLD
 author: Tonim (ZpkDxGames)
@@ -21,8 +21,8 @@ softdepend:
 
 commands:
   quests:
-    description: Open and manage your quest journal.
-    usage: /quests [daily|weekly|milestones|history|settings|info]
+    description: Open and manage your premium quest journal.
+    usage: /quests [overview|active|available|categories|tracked|completed|statistics|help|daily|weekly|milestones|history|settings|info]
     aliases: [quest, pquests, plexonquests]
 
 permissions:
@@ -30,7 +30,7 @@ permissions:
     description: Open and browse the quest journal.
     default: true
   plexonquests.pin:
-    description: Pin and unpin quests.
+    description: Track/untrack quests (3.x permission retained for pin compatibility).
     default: true
   plexonquests.history:
     description: Browse personal quest history.

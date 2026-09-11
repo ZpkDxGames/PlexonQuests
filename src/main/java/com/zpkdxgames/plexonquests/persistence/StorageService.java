@@ -42,6 +42,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 public final class StorageService implements AutoCloseable {
+    public static final int CURRENT_SCHEMA_VERSION = 2;
     private static final String[] MIGRATION_V1 = {
         """
         CREATE TABLE IF NOT EXISTS schema_meta (

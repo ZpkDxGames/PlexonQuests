@@ -66,27 +66,29 @@ public final class PlexonQuestsExpansion extends PlaceholderExpansion {
         if (player == null || profile == null) {
             return neutral;
         }
-        QuestAssignment pinned = profile.pinnedAssignment().flatMap(profile::assignment).orElse(null);
+        QuestAssignment pinned = profile.pinnedAssignment().flatMap(profile::assignment)
+                .filter(assignment -> assignment.state() == com.zpkdxgames.plexonquests.quest.AssignmentState.ACTIVE)
+                .orElse(null);
         return switch (parameters.toLowerCase(Locale.ROOT)) {
-            case "active" -> Long.toString(profile.assignments().stream()
+            case "active", "active_count" -> Long.toString(profile.assignments().stream()
                     .filter(assignment -> assignment.state() == com.zpkdxgames.plexonquests.quest.AssignmentState.ACTIVE)
                     .count());
             case "completed_unclaimed" -> Long.toString(profile.claimableCount());
-            case "completed_total" -> Long.toString(profile.completedTotal());
+            case "completed_total", "completed_count" -> Long.toString(profile.completedTotal());
             case "daily_time_left" -> timeLeft(QuestScope.DAILY);
             case "weekly_time_left" -> timeLeft(QuestScope.WEEKLY);
             case "daily_rerolls" -> Integer.toString(rerolls.freeRemaining(player, QuestScope.DAILY));
-            case "pinned_name" -> pinned == null
+            case "pinned_name", "tracked" -> pinned == null
                     ? neutral
                     : text.plain(text.parse(pinned.definition().display().name()));
-            case "pinned_progress" -> pinned == null
+            case "pinned_progress", "tracked_progress" -> pinned == null
                     ? neutral
                     : text.formatNumber(pinned.displayProgress().current()) + "/"
                             + text.formatNumber(pinned.displayProgress().required());
-            case "pinned_percentage" -> pinned == null
+            case "pinned_percentage", "tracked_percentage" -> pinned == null
                     ? neutral
                     : Integer.toString((int) Math.floor(pinned.percentage()));
-            case "pinned_time_left" -> pinned == null
+            case "pinned_time_left", "tracked_time_left" -> pinned == null
                     ? neutral
                     : pinned.expiresAt().map(expiry -> text.formatDuration(Duration.between(Instant.now(), expiry)))
                             .orElse(neutral);
