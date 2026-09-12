@@ -1,0 +1,74 @@
+name: Finish 4.1 presentation consistency sweep
+
+on:
+  push:
+    branches: [revamp/4.1.0-full-standard]
+    paths: ['.github/workflows/revamp-presentation-sweep.yml']
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: revamp/4.1.0-full-standard
+          fetch-depth: 0
+      - name: Patch compatibility presentation paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path('src/main/java/com/zpkdxgames/plexonquests/gui/MenuService.java')
+          s = path.read_text()
+
+          old = '''                    text.parse("<gray>Rewards <white>" + entry.rewardSummary()),'''
+          new = '''                    text.parse("<gray>Rewards <white>" + historyRewardSummary(entry.rewardSummary())),'''
+          if s.count(old) != 1:
+              raise SystemExit('legacy history reward rendering marker not found exactly once')
+          s = s.replace(old, new, 1)
+
+          old = '''    private List<Component> rewardLines(QuestAssignment assignment) {
+              return assignment.definition().rewards().entries().stream()
+                      .map(reward -> text.parse("<dark_gray>• <gray><reward>", Map.of("reward", reward.display())))
+                      .toList();
+          }
+'''
+          new = '''    private List<Component> rewardLines(QuestAssignment assignment) {
+              return assignment.definition().rewards().entries().stream()
+                      .map(reward -> text.parse(
+                              null,
+                              "<dark_gray>• <reward>",
+                              Map.of(),
+                              Map.of("reward", text.parse(reward.display()))))
+                      .toList();
+          }
+
+          private static String historyRewardSummary(String encoded) {
+              if (encoded == null || encoded.isBlank()) return "Claimed";
+              return encoded
+                      .replaceFirst("^[A-Za-z0-9_-]+=", "")
+                      .replaceAll(",[A-Za-z0-9_-]+=", " <dark_gray>+ ");
+          }
+'''
+          if s.count(old) != 1:
+              raise SystemExit('legacy rewardLines block not found exactly once')
+          s = s.replace(old, new, 1)
+          path.write_text(s)
+          PY
+          git diff --check
+      - name: Commit sweep
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/revamp-presentation-sweep.yml
+          git config user.name 'Tonim'
+          git config user.email '99552287+ZpkDxGames@users.noreply.github.com'
+          git add src/main/java/com/zpkdxgames/plexonquests/gui/MenuService.java
+          git diff --cached --check
+          git commit -m 'Align compatibility menus with MiniMessage presentation'
+          git push origin HEAD:revamp/4.1.0-full-standard
