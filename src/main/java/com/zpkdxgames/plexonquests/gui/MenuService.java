@@ -446,7 +446,7 @@ public final class MenuService {
                     Component.empty(),
                     text.parse("<gray>Result <white>" + entry.state()),
                     text.parse("<gray>Objectives <white>" + entry.objectiveSummary()),
-                    text.parse("<gray>Rewards <white>" + entry.rewardSummary()),
+                    text.parse("<gray>Rewards <white>" + historyRewardSummary(entry.rewardSummary())),
                     Component.empty(),
                     text.parse("<dark_gray>Read-only history entry"));
             holder.getInventory().setItem(slots.get(index), itemFactory.create(
@@ -756,8 +756,19 @@ public final class MenuService {
 
     private List<Component> rewardLines(QuestAssignment assignment) {
         return assignment.definition().rewards().entries().stream()
-                .map(reward -> text.parse("<dark_gray>• <gray><reward>", Map.of("reward", reward.display())))
+                .map(reward -> text.parse(
+                        null,
+                        "<dark_gray>• <reward>",
+                        Map.of(),
+                        Map.of("reward", text.parse(reward.display()))))
                 .toList();
+    }
+
+    private static String historyRewardSummary(String encoded) {
+        if (encoded == null || encoded.isBlank()) return "Claimed";
+        return encoded
+                .replaceFirst("^[A-Za-z0-9_-]+=", "")
+                .replaceAll(",[A-Za-z0-9_-]+=", " <dark_gray>+ " );
     }
 
     private PlayerProfile requireProfile(Player player) {
