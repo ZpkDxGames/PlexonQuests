@@ -44,4 +44,24 @@ class ConfigManagerReloadContractTest {
         assertTrue(manager.lastActivationErrors().isEmpty());
         assertTrue(manager.reloadAsync(Runnable::run).join().success());
     }
+
+    @Test
+    void invalidRewardMiniMessageRejectsReloadAndPreservesKnownGoodSnapshot() throws Exception {
+        server = MockBukkit.mock();
+        PlexonQuestsPlugin plugin = MockBukkit.load(PlexonQuestsPlugin.class);
+        ConfigManager manager = new ConfigManager(plugin);
+        ConfigSnapshot knownGood = manager.loadInitial();
+        Path quest = manager.dataDirectory().resolve("quests/daily/stonebound.yml");
+        String original = Files.readString(quest);
+
+        Files.writeString(quest, original.replace(
+                "<aqua>350 experience points",
+                "<aqua350 experience points"));
+        ConfigManager.ReloadResult rejected = manager.reloadAsync(Runnable::run).join();
+
+        assertFalse(rejected.success());
+        assertSame(knownGood, manager.snapshot());
+        assertTrue(manager.lastActivationErrors().stream().anyMatch(error ->
+                error.contains("rewards.entries.experience.display contains malformed MiniMessage")));
+    }
 }
