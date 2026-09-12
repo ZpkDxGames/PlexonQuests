@@ -1,0 +1,244 @@
+name: Apply focused 4.1 presentation hardening
+
+on:
+  push:
+    branches: [revamp/4.1.0-full-standard]
+    paths: ['.github/workflows/revamp-presentation-hardening-v2.yml']
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: revamp/4.1.0-full-standard
+          fetch-depth: 0
+
+      - name: Patch presentation contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          def must_replace(text, old, new, expected=1):
+              found = text.count(old)
+              if found != expected:
+                  raise SystemExit(f'expected {expected} occurrence(s), found {found}: {old[:100]!r}')
+              return text.replace(old, new)
+
+          # Phase 3 player journal: trusted quest-definition presentation values are MiniMessage,
+          # while dynamic/user/runtime strings continue through safe/unparsed paths.
+          path = Path('src/main/java/com/zpkdxgames/plexonquests/gui/Phase2JournalService.java')
+          s = path.read_text()
+          replacements = [
+              ('safe(primaryObjective(assignment))', 'primaryObjective(assignment)'),
+              ('"<gold>" + progress.bar() + " <white>" + progress.percentage() + "%"',
+               'text.progressBarMarkup(progress.percentage()) + " <white>" + progress.percentage() + "%"'),
+              ('safe(rewardSummary(assignment.definition()))', 'rewardSummary(assignment.definition())'),
+              ('safe(definition.display().shortDescription())', 'definition.display().shortDescription()'),
+              ('safe(rewardSummary(definition))', 'rewardSummary(definition)'),
+              ('safe(entry.rewardSummary())', 'historyRewardSummary(entry.rewardSummary())'),
+              ('safe(objective.definition().display())', 'objective.definition().display()'),
+              ('"<gray>" + progress.bar() + " <white>" + progress.percentage() + "%"',
+               'text.progressBarMarkup(progress.percentage()) + " <white>" + progress.percentage() + "%"'),
+              ('"<gold>" + total.bar() + " <white>" + total.percentage() + "%"',
+               'text.progressBarMarkup(total.percentage()) + " <white>" + total.percentage() + "%"'),
+              ('safe(reward.display())', 'reward.display()'),
+              ('safe(rewardSummary(live.definition()))', 'rewardSummary(live.definition())'),
+              ('safe(live.definition().display().shortDescription())', 'live.definition().display().shortDescription()'),
+              ('safe(o.display())', 'o.display()'),
+          ]
+          for old, new in replacements:
+              if old in s:
+                  s = s.replace(old, new)
+
+          old = '''    private List<String> rewardLore(QuestDefinition definition) {
+              List<String> lore = new ArrayList<>();
+              definition.rewards().entries().stream().limit(6)
+                      .forEach(reward -> lore.add("<gray>• <white>" + reward.display()));
+              if (definition.rewards().entries().size() > 6) {
+                  lore.add("<gray>+" + (definition.rewards().entries().size() - 6) + " more");
+              }
+              if (lore.isEmpty()) lore.add("<gray>No listed rewards");
+              return List.copyOf(lore);
+          }
+'''
+          # Depending on whether the safe(reward.display()) replacement happened first, this is the expected block.
+          if old not in s:
+              raise SystemExit('rewardLore block not found after trusted display replacement')
+          # Keep the surrounding gray bullet but allow the reward's own MiniMessage color/style to render.
+          s = s.replace(old, old.replace('"<gray>• <white>" + reward.display()', '"<gray>• " + reward.display()'), 1)
+
+          marker = '''    private String questName(String questId) {'''
+          helper = '''    private String historyRewardSummary(String encoded) {
+              if (encoded == null || encoded.isBlank()) return "Claimed";
+              return encoded
+                      .replaceFirst("^[A-Za-z0-9_-]+=", "")
+                      .replaceAll(",[A-Za-z0-9_-]+=", " <dark_gray>+ ");
+          }
+
+'''
+          if helper.strip() not in s:
+              if marker not in s: raise SystemExit('questName insertion marker not found')
+              s = s.replace(marker, helper + marker, 1)
+          path.write_text(s)
+
+          # Shared progress renderer: expose one markup source for String- and Component-based UIs.
+          path = Path('src/main/java/com/zpkdxgames/plexonquests/presentation/TextService.java')
+          s = path.read_text()
+          old = '''    public Component progressBar(double percentage) {
+              int segments = Math.max(1, Math.min(30, configs.snapshot().menus().integer("progress.segments", 10)));
+              String filled = configs.snapshot().menus().string("progress.filled-character", "▰");
+              String empty = configs.snapshot().menus().string("progress.empty-character", "▱");
+              String emptyColor = configs.snapshot().menus().string("progress.empty-color", "#4B5563");
+              int count = (int) Math.floor(Math.max(0D, Math.min(100D, percentage)) * segments / 100D);
+              String template = "<" + progressColor(percentage) + ">" + filled.repeat(count)
+                      + "<" + emptyColor + ">" + empty.repeat(segments - count);
+              return parse(template);
+          }
+'''
+          new = '''    public String progressBarMarkup(double percentage) {
+              int segments = Math.max(1, Math.min(30, configs.snapshot().menus().integer("progress.segments", 10)));
+              String filled = configs.snapshot().menus().string("progress.filled-character", "▰");
+              String empty = configs.snapshot().menus().string("progress.empty-character", "▱");
+              String emptyColor = configs.snapshot().menus().string("progress.empty-color", "#4B5563");
+              double clamped = Math.max(0D, Math.min(100D, percentage));
+              int count = (int) Math.floor(clamped * segments / 100D);
+              if (clamped > 0D && count == 0) count = 1;
+              if (clamped >= 100D) count = segments;
+              return "<" + progressColor(clamped) + ">" + filled.repeat(count)
+                      + "<" + emptyColor + ">" + empty.repeat(segments - count);
+          }
+
+          public Component progressBar(double percentage) {
+              return parse(progressBarMarkup(percentage));
+          }
+'''
+          s = must_replace(s, old, new)
+
+          old = '''    public Component message(String path, Map<String, String> placeholders) {
+              String prefix = configs.snapshot().messages().string("prefix", "");
+              String template = configs.snapshot().messages().string(path, "<red>Missing message: " + path);
+              return parse(prefix).append(parse(null, template, placeholders, Map.of()));
+          }
+'''
+          new = '''    public Component message(String path, Map<String, String> placeholders) {
+              return message(path, placeholders, Map.of());
+          }
+
+          public Component message(
+                  String path, Map<String, String> placeholders, Map<String, Component> components) {
+              String prefix = configs.snapshot().messages().string("prefix", "");
+              String template = configs.snapshot().messages().string(path, "<red>Missing message: " + path);
+              return parse(prefix).append(parse(null, template, placeholders, components));
+          }
+'''
+          s = must_replace(s, old, new)
+          path.write_text(s)
+
+          # Registry validation must cover every field documented and rendered as MiniMessage.
+          path = Path('src/main/java/com/zpkdxgames/plexonquests/config/MiniMessageValidator.java')
+          s = path.read_text()
+          old = '''            quest.objectives().values().forEach(objective ->
+                      validate(quest.source() + ".objectives." + objective.id() + ".display", objective.display(), errors));
+              validate(quest.source() + ".effects.complete", quest.completeEffect(), errors);'''
+          new = '''            quest.objectives().values().forEach(objective ->
+                      validate(quest.source() + ".objectives." + objective.id() + ".display", objective.display(), errors));
+              quest.rewards().entries().forEach(reward ->
+                      validate(quest.source() + ".rewards.entries." + reward.id() + ".display", reward.display(), errors));
+              validate(quest.source() + ".effects.complete", quest.completeEffect(), errors);'''
+          s = must_replace(s, old, new)
+          marker = '''        });
+    }
+
+    private static void validate(String path, String value, List<String> errors) {'''
+          replacement = '''        });
+              registry.rarities().forEach((id, rarity) ->
+                      validate("rarities." + id + ".display", rarity.display(), errors));
+          }
+
+          private static void validate(String path, String value, List<String> errors) {'''
+          s = must_replace(s, marker, replacement)
+          path.write_text(s)
+
+          # Objective-complete chat should preserve a configured objective Component rather than escaping its tags.
+          path = Path('src/main/java/com/zpkdxgames/plexonquests/presentation/QuestNotificationListener.java')
+          s = path.read_text()
+          old = '''                .ifPresent(objective -> event.getPlayer().sendMessage(text.message(
+                          "quests.objective-complete", Map.of("objective", objective.definition().display()))));'''
+          new = '''                .ifPresent(objective -> event.getPlayer().sendMessage(text.message(
+                          "quests.objective-complete",
+                          Map.of(),
+                          Map.of("objective", text.parse(objective.definition().display())))));'''
+          s = must_replace(s, old, new)
+          path.write_text(s)
+
+          # Regression coverage for this exact runtime defect and the shared progress contract.
+          path = Path('src/test/java/com/zpkdxgames/plexonquests/gui/player/Phase3JournalUxArchitectureTest.java')
+          s = path.read_text()
+          addition = '''
+              @Test
+              void journalRendersTrustedMiniMessageAndSharedProgressMarkup() throws IOException {
+                  String source = Files.readString(JOURNAL);
+                  assertTrue(source.contains("text.progressBarMarkup(progress.percentage())"));
+                  assertTrue(source.contains("text.progressBarMarkup(total.percentage())"));
+                  assertFalse(source.contains("progress.bar()"));
+                  assertFalse(source.contains("total.bar()"));
+                  assertFalse(source.contains("safe(reward.display())"));
+                  assertFalse(source.contains("safe(rewardSummary("));
+                  assertTrue(source.contains("reward.display()"));
+              }
+          '''
+          if addition.strip() not in s:
+              pos = s.rfind('\n}')
+              if pos < 0: raise SystemExit('Phase3JournalUxArchitectureTest closing brace not found')
+              s = s[:pos] + '\n' + addition.rstrip() + s[pos:]
+          path.write_text(s)
+
+          path = Path('src/test/java/com/zpkdxgames/plexonquests/config/ConfigManagerReloadContractTest.java')
+          s = path.read_text()
+          addition = '''
+              @Test
+              void invalidRewardMiniMessageRejectsReloadAndPreservesKnownGoodSnapshot() throws Exception {
+                  server = MockBukkit.mock();
+                  PlexonQuestsPlugin plugin = MockBukkit.load(PlexonQuestsPlugin.class);
+                  ConfigManager manager = new ConfigManager(plugin);
+                  ConfigSnapshot knownGood = manager.loadInitial();
+                  Path quest = manager.dataDirectory().resolve("quests/daily/stonebound.yml");
+                  String original = Files.readString(quest);
+
+                  Files.writeString(quest, original.replace(
+                          "<aqua>350 experience points",
+                          "<aqua350 experience points"));
+                  ConfigManager.ReloadResult rejected = manager.reloadAsync(Runnable::run).join();
+
+                  assertFalse(rejected.success());
+                  assertSame(knownGood, manager.snapshot());
+                  assertTrue(manager.lastActivationErrors().stream().anyMatch(error ->
+                          error.contains("rewards.entries.experience.display contains malformed MiniMessage")));
+              }
+          '''
+          if addition.strip() not in s:
+              pos = s.rfind('\n}')
+              if pos < 0: raise SystemExit('ConfigManagerReloadContractTest closing brace not found')
+              s = s[:pos] + '\n' + addition.rstrip() + s[pos:]
+          path.write_text(s)
+          PY
+
+          git diff --check
+
+      - name: Commit focused presentation fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/revamp-presentation-hardening-v2.yml
+          git config user.name 'Tonim'
+          git config user.email '99552287+ZpkDxGames@users.noreply.github.com'
+          git add src/main/java src/test/java
+          git diff --cached --check
+          git commit -m 'Fix MiniMessage rendering and shared progress bars'
+          git push origin HEAD:revamp/4.1.0-full-standard
