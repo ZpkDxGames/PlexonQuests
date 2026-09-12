@@ -4,6 +4,19 @@ All notable changes to PlexonQuests are documented here.
 
 ## [Unreleased]
 
+## [4.2.0] - 2026-09-12
+
+- Replaced automatic normal Daily/Weekly/Milestone starts with an explicit join-based Quest Board.
+- Added deterministic offer catalogs preserving weighted pools, mix constraints and recent-history exclusion.
+- Added default one-active-normal-quest policy, period-budget enforcement, duplicate protection, guarded abandon and non-destructive legacy overflow.
+- Reused assignment persistence to reconstruct period participation without a new schema/table.
+- Preserved shared objective-interest gates: no joined quest has no normal objective candidates; joined players index only active quest objectives.
+- Redesigned `/quests` around Current, Available, Completed/History, Skills and Help with a real player head and stale-safe async rendering.
+- Added optional PlexonSkills context with unavailable/loading/ready states and no implicit skill eligibility.
+- Retained reroll/tracking/admin/API compatibility while removing reroll clutter from normal UX.
+- Advanced menu layout to 4, honored configured filler material, and preserved customized menu files on migration.
+- Updated rollback metadata to `v4.1.0` / `3b0082bc181b3765e7cdb2bf4e9ce6c72206b896`.
+
 ## [4.1.0] - 2026-09-12
 
 - Final stable full-source revamp for Java 25, Paper 26.2 and PlexonCore 2.0.4.

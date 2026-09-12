@@ -1,3 +1,11 @@
+# PlexonQuests 4.2 API compatibility note
+
+4.2 changes normal **player participation UX**, not public API ownership. Existing public/admin manual assignment remains available and distinct from player Quest Board joins. Active assignment state remains the runtime/progress authority; an offer appearing in the catalog does not itself make that quest active.
+
+PlexonSkills is consumed only through its optional public API/ServicesManager boundary and is not a mandatory eligibility dependency.
+
+---
+
 # Public API, events, and placeholders
 
 PlexonQuests registers `PlexonQuestsAPI` with Bukkit's `ServicesManager`. Add PlexonQuests as a compile-time `provided` dependency in the consuming plugin and declare `softdepend: [PlexonQuests]` when the integration is optional.

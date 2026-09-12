@@ -112,4 +112,16 @@ class Phase3JournalUxArchitectureTest {
         assertFalse(source.contains("Quest ID"));
         assertTrue(source.contains("questName(questId)"));
     }
+
+    @Test
+    void menuLayoutFourUsesConfiguredFiller() throws IOException {
+        String journal = Files.readString(JOURNAL);
+        String configManager = Files.readString(Path.of(
+                "src/main/java/com/zpkdxgames/plexonquests/config/ConfigManager.java"));
+        String menus = Files.readString(Path.of("src/main/resources/menus.yml"));
+        assertTrue(configManager.contains("CURRENT_MENU_LAYOUT = 4"));
+        assertTrue(configManager.contains("BUNDLED_MENU_LAYOUT_3_SHA256"));
+        assertTrue(journal.contains("menus().string("common.filler.material""));
+        assertTrue(menus.contains("layout-version: 4"));
+    }
 }

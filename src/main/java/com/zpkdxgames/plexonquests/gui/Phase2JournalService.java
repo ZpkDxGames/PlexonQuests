@@ -738,7 +738,7 @@ public final class Phase2JournalService implements Listener {
     private Holder create(JournalNavigationContext context, String title, int size) {
         Holder holder = new Holder(context);
         holder.inventory = Bukkit.createInventory(holder, size, text.parse(title));
-        ItemStack filler = items.create(Material.BLACK_STAINED_GLASS_PANE, Component.empty(), List.of(), false);
+        ItemStack filler = filler();
         for (int i = 0; i < size; i++) holder.inventory.setItem(i, filler);
         return holder;
     }
@@ -763,11 +763,23 @@ public final class Phase2JournalService implements Listener {
     }
 
     private void clearContent(Holder holder) {
-        ItemStack filler = items.create(Material.BLACK_STAINED_GLASS_PANE, Component.empty(), List.of(), false);
+        ItemStack filler = filler();
         for (int slot : CONTENT) {
             holder.inventory.setItem(slot, filler);
             holder.actions.remove(slot);
         }
+    }
+
+    private ItemStack filler() {
+        String configured = configs.snapshot().menus().string(
+                "common.filler.material", Material.BLACK_STAINED_GLASS_PANE.name());
+        Material material;
+        try {
+            material = Material.valueOf(configured.toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException exception) {
+            material = Material.BLACK_STAINED_GLASS_PANE;
+        }
+        return items.create(material, Component.empty(), List.of(), false);
     }
 
     private void item(Holder holder, int slot, Material material, String name, List<String> lore, boolean glow, Action action) {

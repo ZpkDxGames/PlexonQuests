@@ -1,3 +1,9 @@
+# 4.2 supersession note
+
+The historical 4.0/4.1 Phase 3 journal below is retained as design context. PlexonQuests 4.2 supersedes its normal assignment/discovery flow with the explicit join-based Quest Board in [`PLAYER_UX_4.2.md`](PLAYER_UX_4.2.md), while retaining the mature persistence/transaction authorities.
+
+---
+
 # PlexonQuests Phase 3 — Player UX / GUI Product Overhaul
 
 ## Accepted boundary

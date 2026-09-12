@@ -1,5 +1,5 @@
 schema-version: 1
-layout-version: 3
+layout-version: 4
 
 progress:
   segments: 10
