@@ -20,28 +20,31 @@ jobs:
           ref: feature/4.2.0-joined-quest-board
           fetch-depth: 0
 
-      - name: Apply final candidate patch
-        run: python3 .github/scripts/finalize_4_2.py
-
-      - name: Validate final candidate
+      - name: Apply and validate final candidate patch
         shell: bash
         run: |
           set -euo pipefail
+          cp .github/workflows/build.yml /tmp/build.yml
+          cp .github/workflows/release.yml /tmp/release.yml
+          cp .github/workflows/agent-finalize-4.2.yml /tmp/agent-finalize-4.2.yml
+          python3 .github/scripts/finalize_4_2.py
           git diff --check
           grep -F 'CURRENT_MENU_LAYOUT = 4' src/main/java/com/zpkdxgames/plexonquests/config/ConfigManager.java
           grep -F 'layout-version: 4' src/main/resources/menus.yml
           grep -F "ROLLBACK_TAG: 'v4.1.0'" .github/workflows/build.yml .github/workflows/release.yml
           test -s .release/RELEASE_NOTES_4.2.0.md
           test -s docs/MIGRATION_4.1.0_TO_4.2.0.md
-          test ! -e .github/workflows/agent-finalize-4.2.yml
           test ! -e .github/scripts/finalize_4_2.py
+          cp /tmp/build.yml .github/workflows/build.yml
+          cp /tmp/release.yml .github/workflows/release.yml
+          cp /tmp/agent-finalize-4.2.yml .github/workflows/agent-finalize-4.2.yml
 
-      - name: Commit final stable candidate
+      - name: Commit non-workflow stable candidate changes
         shell: bash
         run: |
           set -euo pipefail
           git config user.name Tonim
           git config user.email 99552287+ZpkDxGames@users.noreply.github.com
           git add -A
-          git commit -m 'Finalize 4.2 stable release candidate'
+          git commit -m 'Finalize 4.2 source documentation and tests'
           git push origin HEAD:feature/4.2.0-joined-quest-board
