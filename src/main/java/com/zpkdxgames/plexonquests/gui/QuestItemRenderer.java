@@ -114,14 +114,15 @@ public final class QuestItemRenderer {
                         : material("details.objective.active-material", Material.LIME_DYE);
         Map<String, String> values = text.placeholders(
                 "objective_state_color", stateColor,
-                "objective_name", objective.definition().display(),
                 "objective_state", locked ? "Locked" : objective.complete() ? "Complete" : "In progress",
                 "objective_type", humanize(objective.definition().type().name()),
                 "current", formatObjectiveValue(objective, objective.current()),
                 "required", formatObjectiveValue(objective, objective.required()),
                 "remaining", formatObjectiveValue(objective, Math.max(0L, objective.required() - objective.current())),
                 "progress_color", text.progressColor(percentage));
-        Map<String, Component> components = Map.of("progress_bar", text.progressBar(percentage));
+        Map<String, Component> components = Map.of(
+                "objective_name", text.parse(objective.definition().display()),
+                "progress_bar", text.progressBar(percentage));
         List<Component> filters = filterSummary(objective);
         List<Component> lore = text.expandLines(
                 configs.snapshot().menus().strings("details.objective.lore"),
@@ -130,7 +131,11 @@ public final class QuestItemRenderer {
                 Map.of("filters", filters));
         return items.create(
                 material,
-                text.parse(configs.snapshot().menus().string("details.objective.name", "<white><objective_name>"), values),
+                text.parse(
+                        null,
+                        configs.snapshot().menus().string("details.objective.name", "<white><objective_name>"),
+                        values,
+                        components),
                 lore,
                 objective.complete());
     }
@@ -182,13 +187,14 @@ public final class QuestItemRenderer {
             }
             String icon = objective.complete() ? "<green>✔" : "<dark_gray>•";
             output.add(text.parse(
+                    null,
                     icon + " <gray><name> <progress_color><current></progress_color><dark_gray>/</dark_gray><white><required>",
                     text.placeholders(
-                            "name", objective.definition().display(),
                             "progress_color", text.progressColor(objective.required() == 0L
                                     ? 0D : objective.current() * 100D / objective.required()),
                             "current", formatObjectiveValue(objective, objective.current()),
-                            "required", formatObjectiveValue(objective, objective.required()))));
+                            "required", formatObjectiveValue(objective, objective.required())),
+                    Map.of("name", text.parse(objective.definition().display()))));
         }
         return List.copyOf(output);
     }
