@@ -4,17 +4,32 @@ import com.zpkdxgames.plexonquests.config.PluginSettings;
 import com.zpkdxgames.plexonquests.quest.QuestScope;
 import org.bukkit.entity.Player;
 
+/** Resolves Daily/Weekly period participation budgets while retaining the 4.1 permission contract. */
 public final class SlotResolver {
     public int resolve(Player player, QuestScope scope, String rankCategory, PluginSettings settings) {
+        return resolveParticipationBudget(player, scope, rankCategory, settings);
+    }
+
+    public int resolveParticipationBudget(
+            Player player, QuestScope scope, String rankCategory, PluginSettings settings) {
         int configuredBase = switch (scope) {
             case DAILY -> settings.assignments().baseDailySlots();
             case WEEKLY -> settings.assignments().baseWeeklySlots();
             case MILESTONE, MANUAL -> settings.assignments().maximumActiveManual();
         };
-        return resolve(player, scope, rankCategory, settings, configuredBase);
+        return resolveParticipationBudget(player, scope, rankCategory, settings, configuredBase);
     }
 
     public int resolve(
+            Player player,
+            QuestScope scope,
+            String rankCategory,
+            PluginSettings settings,
+            int baseAssignments) {
+        return resolveParticipationBudget(player, scope, rankCategory, settings, baseAssignments);
+    }
+
+    public int resolveParticipationBudget(
             Player player,
             QuestScope scope,
             String rankCategory,

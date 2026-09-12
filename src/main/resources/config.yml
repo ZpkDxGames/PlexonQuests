@@ -1,4 +1,4 @@
-schema-version: 1
+schema-version: 2
 
 locale: en_US
 
@@ -19,6 +19,7 @@ rotation:
   completed-claim-grace: 24h
   recent-history-exclusion: 7d
 
+# 4.1 slot keys are retained as Daily/Weekly period participation budgets.
 assignments:
   base-daily-slots: 3
   base-weekly-slots: 2
@@ -26,6 +27,28 @@ assignments:
   maximum-weekly-slots: 5
   maximum-active-manual: 20
   allow-one-action-to-progress-multiple-quests: true
+
+participation:
+  maximum-active-quests: 1
+  allow-abandon: true
+  abandon-consumes-period-budget: true
+  manual-assignments-count-toward-limit: true
+
+catalog:
+  daily-offers: 7
+  weekly-offers: 7
+  refresh-on-period-change: true
+
+skills-display:
+  enabled: true
+  provider: PLEXON_SKILLS
+  category-map:
+    mining: MINING
+    woodcutting: WOODCUTTING
+    excavation: EXCAVATION
+    farming: FARMING
+    fishing: FISHING
+    alchemy: ALCHEMY
 
 rank-progression:
   enabled: true
@@ -41,6 +64,7 @@ rank-progression:
     skilled: 5
     pro: 6
 
+# Retained for command/API compatibility. The normal player board no longer needs rerolls.
 rerolls:
   enabled: true
   free-daily: 1
@@ -92,10 +116,10 @@ integrations:
   plexoncrates: AUTO
   plexonshops: AUTO
   plexondailyrewards: AUTO
+  plexonskills: AUTO
 
 text:
   placeholder-rendering:
-    # SAFE inserts PlaceholderAPI output as literal text. LEGACY and MINIMESSAGE are opt-in trusted modes.
     default: SAFE
     allow-legacy: true
     allow-minimessage: true
