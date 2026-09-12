@@ -114,19 +114,23 @@ class PlexonQuestsPluginTest {
     }
 
     @Test
-    void earlierMenusAreBackedUpAndMigrated() throws Exception {
+    void customizedLayoutThreeMenusAreBackedUpAndPreservedDuringLayoutFourMigration() throws Exception {
         server = MockBukkit.mock();
         PlexonQuestsPlugin plugin = MockBukkit.load(PlexonQuestsPlugin.class);
         Path menus = plugin.getDataFolder().toPath().resolve("menus.yml");
-        String layoutOne = Files.readString(menus).replace("layout-version: 3\n", "");
-        Files.writeString(menus, layoutOne);
+        String customizedLayoutThree = Files.readString(menus)
+                .replace("layout-version: 4", "layout-version: 3")
+                + "\n# custom-layout-marker\n";
+        Files.writeString(menus, customizedLayoutThree);
 
         ConfigManager configs = new ConfigManager(plugin);
         configs.loadInitial();
 
-        assertTrue(Files.readString(menus).contains("layout-version: 3"));
+        String migrated = Files.readString(menus);
+        assertTrue(migrated.contains("layout-version: 4"));
+        assertTrue(migrated.contains("# custom-layout-marker"));
         try (var backups = Files.list(plugin.getDataFolder().toPath().resolve("backups"))) {
-            assertTrue(backups.anyMatch(path -> path.getFileName().toString().startsWith("menus-v1-")));
+            assertTrue(backups.anyMatch(path -> path.getFileName().toString().startsWith("menus-v3-")));
         }
     }
 
