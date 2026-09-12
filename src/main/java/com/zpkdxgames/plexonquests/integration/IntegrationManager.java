@@ -46,9 +46,7 @@ public final class IntegrationManager {
         this.core = core;
     }
 
-    public CoreBridge core() {
-        return core;
-    }
+    public CoreBridge core() { return core; }
 
     public void detect() {
         Map<String, IntegrationState> detected = new LinkedHashMap<>();
@@ -59,17 +57,12 @@ public final class IntegrationManager {
         }
     }
 
-    public boolean available(String id) {
-        return state(id).status() == IntegrationStatus.AVAILABLE;
-    }
+    public boolean available(String id) { return state(id).status() == IntegrationStatus.AVAILABLE; }
 
     public IntegrationState state(String id) {
         String normalized = normalize(id);
-        if ("PLEXON_CORE".equals(normalized)) {
-            return coreState();
-        }
-        return states.getOrDefault(
-                normalized,
+        if ("PLEXON_CORE".equals(normalized)) return coreState();
+        return states.getOrDefault(normalized,
                 new IntegrationState(normalized, id, IntegrationStatus.MISSING, "", "Unknown integration"));
     }
 
@@ -81,25 +74,17 @@ public final class IntegrationManager {
 
     public String rankCategory(UUID playerId, Set<String> configuredCategories) {
         IntegrationState rankState = state("PLEXON_RANKS");
-        if (rankState.status() != IntegrationStatus.AVAILABLE) {
-            return "default";
-        }
+        if (rankState.status() != IntegrationStatus.AVAILABLE) return "default";
         Plugin provider = Bukkit.getPluginManager().getPlugin("PlexonRanks");
-        if (provider == null) {
-            return "default";
-        }
+        if (provider == null) return "default";
         try {
             ClassLoader loader = provider.getClass().getClassLoader();
             Class<?> apiType = Class.forName("com.zpkdxgames.plexonranks.api.PlexonRanksAPI", false, loader);
             @SuppressWarnings({"rawtypes", "unchecked"})
             RegisteredServiceProvider<?> registration = Bukkit.getServicesManager().getRegistration((Class) apiType);
-            if (registration == null) {
-                return "default";
-            }
+            if (registration == null) return "default";
             Object optionalRank = apiType.getMethod("getRank", UUID.class).invoke(registration.getProvider(), playerId);
-            if (!(optionalRank instanceof Optional<?> optional) || optional.isEmpty()) {
-                return "default";
-            }
+            if (!(optionalRank instanceof Optional<?> optional) || optional.isEmpty()) return "default";
             Object rank = optional.get();
             String rankId = String.valueOf(rank.getClass().getMethod("id").invoke(rank)).toLowerCase(Locale.ROOT);
             return configuredCategories.stream()
@@ -127,31 +112,22 @@ public final class IntegrationManager {
 
     private void registerAvailableProgressBridges() {
         IntegrationContext context = progressContext;
-        if (context == null) {
-            return;
-        }
+        if (context == null) return;
         for (IntegrationAdapter adapter : PlexonIntegrationAdapters.all()) {
             if (registeredProgressAdapters.contains(adapter.id())
-                    || state(adapter.id()).status() != IntegrationStatus.AVAILABLE) {
-                continue;
-            }
+                    || state(adapter.id()).status() != IntegrationStatus.AVAILABLE) continue;
             adapter.register(context);
             registeredProgressAdapters.add(adapter.id());
         }
     }
 
     private void registerLifecycleListener() {
-        if (lifecycleListenerRegistered) {
-            return;
-        }
+        if (lifecycleListenerRegistered) return;
         lifecycleListenerRegistered = true;
         Bukkit.getPluginManager().registerEvents(new Listener() {
             @EventHandler(priority = EventPriority.MONITOR)
             public void onPluginEnable(PluginEnableEvent event) {
-                if (!isTrackedProvider(event.getPlugin())) {
-                    return;
-                }
-                // Run next tick so provider services/events are fully available before reflection discovery.
+                if (!isTrackedProvider(event.getPlugin())) return;
                 Bukkit.getScheduler().runTask(plugin, () -> {
                     detect();
                     registerAvailableProgressBridges();
@@ -160,11 +136,7 @@ public final class IntegrationManager {
 
             @EventHandler(priority = EventPriority.MONITOR)
             public void onPluginDisable(PluginDisableEvent event) {
-                if (!isTrackedProvider(event.getPlugin())) {
-                    return;
-                }
-                // Existing listener registrations are retained and reused if the same provider is re-enabled;
-                // keeping the registered id prevents duplicate callbacks after reload-like lifecycle changes.
+                if (!isTrackedProvider(event.getPlugin())) return;
                 Bukkit.getScheduler().runTask(plugin, IntegrationManager.this::detect);
             }
         }, plugin);
@@ -178,14 +150,10 @@ public final class IntegrationManager {
     private void registerPlayerEvent(
             String pluginName, String eventClassName, ObjectiveType type, ProgressService progress) {
         Plugin provider = Bukkit.getPluginManager().getPlugin(pluginName);
-        if (provider == null || !provider.isEnabled()) {
-            return;
-        }
+        if (provider == null || !provider.isEnabled()) return;
         try {
             Class<?> raw = Class.forName(eventClassName, false, provider.getClass().getClassLoader());
-            if (!Event.class.isAssignableFrom(raw)) {
-                return;
-            }
+            if (!Event.class.isAssignableFrom(raw)) return;
             @SuppressWarnings("unchecked")
             Class<? extends Event> eventType = (Class<? extends Event>) raw;
             Method getPlayer = raw.getMethod("getPlayer");
@@ -194,36 +162,35 @@ public final class IntegrationManager {
                     bridgeListener,
                     EventPriority.MONITOR,
                     (listener, event) -> {
-                        if (event instanceof Cancellable cancellable && cancellable.isCancelled()) {
-                            return;
-                        }
+                        if (event instanceof Cancellable cancellable && cancellable.isCancelled()) return;
                         try {
                             Object playerValue = getPlayer.invoke(event);
                             if (playerValue instanceof Player player) {
                                 progress.contribute(player, Contribution.simple(type, 1L, player));
                             }
                         } catch (IllegalAccessException | InvocationTargetException exception) {
-                            plugin.getLogger().log(Level.WARNING, "Could not read public integration event " + eventClassName, exception);
+                            plugin.getLogger().log(Level.WARNING,
+                                    "Could not read public integration event " + eventClassName, exception);
                         }
                     },
                     plugin,
                     true);
         } catch (ReflectiveOperationException | LinkageError exception) {
-            plugin.getLogger().log(Level.WARNING, "Could not register public integration event " + eventClassName, exception);
+            plugin.getLogger().log(Level.WARNING,
+                    "Could not register public integration event " + eventClassName, exception);
         }
     }
 
     private IntegrationState inspect(String id, Descriptor descriptor) {
         CoreBridge.ProviderHint hint = core.providerHint(id);
         if (hint == CoreBridge.ProviderHint.MISSING) {
-            return new IntegrationState(
-                    id, descriptor.pluginName(), IntegrationStatus.MISSING, "", "PlexonCore reports plugin is not installed");
+            return new IntegrationState(id, descriptor.pluginName(), IntegrationStatus.MISSING, "",
+                    "PlexonCore reports plugin is not installed");
         }
         if (hint == CoreBridge.ProviderHint.DISABLED) {
             Plugin disabled = Bukkit.getPluginManager().getPlugin(descriptor.pluginName());
             String version = disabled == null ? "" : disabled.getPluginMeta().getVersion();
-            return new IntegrationState(
-                    id, descriptor.pluginName(), IntegrationStatus.DISABLED, version,
+            return new IntegrationState(id, descriptor.pluginName(), IntegrationStatus.DISABLED, version,
                     "PlexonCore reports plugin is installed but disabled");
         }
 
@@ -232,41 +199,27 @@ public final class IntegrationManager {
             return new IntegrationState(id, descriptor.pluginName(), IntegrationStatus.MISSING, "", "Plugin is not installed");
         }
         if (!provider.isEnabled()) {
-            return new IntegrationState(
-                    id, descriptor.pluginName(), IntegrationStatus.DISABLED,
+            return new IntegrationState(id, descriptor.pluginName(), IntegrationStatus.DISABLED,
                     provider.getPluginMeta().getVersion(), "Plugin is installed but disabled");
         }
         for (String requiredClass : descriptor.requiredClasses()) {
             try {
                 Class.forName(requiredClass, false, provider.getClass().getClassLoader());
             } catch (ClassNotFoundException | LinkageError exception) {
-                return new IntegrationState(
-                        id,
-                        descriptor.pluginName(),
-                        IntegrationStatus.UNAVAILABLE_MISSING_API,
-                        provider.getPluginMeta().getVersion(),
-                        "Missing supported public API signal: " + requiredClass);
+                return new IntegrationState(id, descriptor.pluginName(), IntegrationStatus.UNAVAILABLE_MISSING_API,
+                        provider.getPluginMeta().getVersion(), "Missing supported public API signal: " + requiredClass);
             }
         }
-        return new IntegrationState(
-                id,
-                descriptor.pluginName(),
-                IntegrationStatus.AVAILABLE,
-                provider.getPluginMeta().getVersion(),
-                "Ready");
+        return new IntegrationState(id, descriptor.pluginName(), IntegrationStatus.AVAILABLE,
+                provider.getPluginMeta().getVersion(), "Ready");
     }
 
     private IntegrationState coreState() {
         IntegrationStatus status;
-        if (!core.installed()) {
-            status = IntegrationStatus.MISSING;
-        } else if (!core.compatible() && !"-".equals(core.apiVersion())) {
-            status = IntegrationStatus.INCOMPATIBLE;
-        } else if (!core.available()) {
-            status = IntegrationStatus.UNAVAILABLE_MISSING_API;
-        } else {
-            status = IntegrationStatus.AVAILABLE;
-        }
+        if (!core.installed()) status = IntegrationStatus.MISSING;
+        else if (!core.compatible() && !"-".equals(core.apiVersion())) status = IntegrationStatus.INCOMPATIBLE;
+        else if (!core.available()) status = IntegrationStatus.UNAVAILABLE_MISSING_API;
+        else status = IntegrationStatus.AVAILABLE;
         String detail = "API " + core.apiVersion()
                 + " | supported " + CoreBridge.SUPPORTED_API_RANGE
                 + " | module " + CoreBridge.MODULE_ID + " " + core.registrationState()
@@ -274,9 +227,7 @@ public final class IntegrationManager {
         return new IntegrationState("PLEXON_CORE", "PlexonCore", status, core.pluginVersion(), detail);
     }
 
-    private static String normalize(String id) {
-        return id.toUpperCase(Locale.ROOT).replace('-', '_');
-    }
+    private static String normalize(String id) { return id.toUpperCase(Locale.ROOT).replace('-', '_'); }
 
     private static Map<String, Descriptor> descriptors() {
         Map<String, Descriptor> descriptors = new LinkedHashMap<>();
@@ -292,14 +243,17 @@ public final class IntegrationManager {
         descriptors.put("PLEXON_KEYS", new Descriptor("PlexonKeys", Set.of(
                 "com.antondev.keys.event.PlexonKeyEarnedEvent",
                 "com.antondev.keys.event.PlexonKeyClaimedEvent")));
-        descriptors.put("PLEXON_CRATES", new Descriptor("PlexonCrates", Set.of(
-                "com.antondev.crates.api.event.CrateOpenEvent")));
+        descriptors.put("PLEXON_CRATES", new Descriptor("PlexonCrates", Set.of("com.antondev.crates.api.event.CrateOpenEvent")));
         descriptors.put("PLEXON_SHOPS", new Descriptor("PlexonShops", Set.of(
                 "com.plexon.shops.event.PlexonShopVisitedEvent",
                 "com.plexon.shops.event.PlexonShopRatedEvent",
                 "com.plexon.shops.event.PlexonShopCreatedEvent")));
         descriptors.put("PLEXON_DAILY_REWARDS", new Descriptor("PlexonDailyRewards", Set.of(
                 "com.zpkdxgames.plexondailyrewards.event.DailyRewardClaimedEvent")));
+        descriptors.put("PLEXON_SKILLS", new Descriptor("PlexonSkills", Set.of(
+                "com.zpkdxgames.plexonskills.api.PlexonSkillsAPI",
+                "com.zpkdxgames.plexonskills.api.PlayerSkillView",
+                "com.zpkdxgames.plexonskills.api.SkillProgressView")));
         return Map.copyOf(descriptors);
     }
 

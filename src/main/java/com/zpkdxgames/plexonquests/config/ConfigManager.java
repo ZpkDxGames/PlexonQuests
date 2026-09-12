@@ -12,9 +12,12 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -29,7 +32,8 @@ import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.plugin.java.JavaPlugin;
 
 public final class ConfigManager {
-    private static final int CURRENT_MENU_LAYOUT = 3;
+    private static final int CURRENT_MENU_LAYOUT = 4;
+    private static final String BUNDLED_MENU_LAYOUT_3_SHA256 = "bb63a01f9c14558eda3ba9f849491b6cfe08e887fb4f128b7edf5c488b2097b6";
     private static final int CURRENT_POOL_CATALOG = 2;
     private static final Map<String, Integer> LEGACY_DAILY_QUESTS = Map.of(
             "stonebound", 12,
@@ -317,14 +321,41 @@ public final class ConfigManager {
         Path backup = dataDirectory.resolve("backups")
                 .resolve("menus-v" + layout + "-" + Instant.now().toEpochMilli() + ".yml");
         Files.copy(menusPath, backup, StandardCopyOption.COPY_ATTRIBUTES);
+
+        boolean exactBundledV3 = layout == 3 && BUNDLED_MENU_LAYOUT_3_SHA256.equals(sha256(existing));
+        if (!exactBundledV3) {
+            String migrated = existing.replaceFirst(
+                    "(?m)^layout-version\\s*:\\s*[0-9]+\\s*$",
+                    "layout-version: " + CURRENT_MENU_LAYOUT);
+            if (migrated.equals(existing)) {
+                plugin.getLogger().warning("Could not safely advance customized menus.yml layout marker; previous file saved as "
+                        + backup.getFileName());
+                return;
+            }
+            AtomicFiles.writeUtf8(menusPath, migrated);
+            plugin.getLogger().info("Preserved customized menus.yml while advancing its layout marker to "
+                    + CURRENT_MENU_LAYOUT + "; previous file saved as " + backup.getFileName());
+            return;
+        }
+
         try (InputStream bundled = plugin.getResource("menus.yml")) {
             if (bundled == null) {
                 throw new IOException("Bundled menus.yml is missing");
             }
             AtomicFiles.writeUtf8(menusPath, new String(bundled.readAllBytes(), StandardCharsets.UTF_8));
         }
-        plugin.getLogger().info("Upgraded menus.yml to layout version " + CURRENT_MENU_LAYOUT
+        plugin.getLogger().info("Upgraded bundled-default menus.yml to layout version " + CURRENT_MENU_LAYOUT
                 + "; previous layout saved as " + backup.getFileName());
+    }
+
+    private static String sha256(String value) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(value.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(digest);
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256 is unavailable", exception);
+        }
     }
 
     private YamlConfiguration loadYaml(String relative) throws IOException, InvalidConfigurationException {

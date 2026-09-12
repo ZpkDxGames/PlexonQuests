@@ -1,3 +1,9 @@
+# PlexonQuests 4.2 participation scaling note
+
+4.2 preserves shared interest-gated listeners and narrows normal per-player interest through explicit participation: no joined quest means no normal objective candidates; one joined quest means only that active quest's objectives are indexed. No per-player/per-quest listener or scheduler, synchronous gameplay DB read, or repeating GUI redraw was added. Live Spark measurements are separate deployment evidence and are not inferred from CI.
+
+---
+
 # Performance model and profiling
 
 PlexonQuests is designed around bounded in-memory matching and asynchronous persistence. Performance claims should be based on measurements from the target server stack; no document can substitute for a live Paper profile.

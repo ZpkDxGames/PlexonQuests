@@ -6,7 +6,6 @@ import com.zpkdxgames.plexonquests.quest.QuestScope;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -37,58 +36,21 @@ public final class PlayerProfile {
         }
     }
 
-    public UUID playerId() {
-        return playerId;
-    }
-
-    public synchronized String latestName() {
-        return latestName;
-    }
-
-    public synchronized void latestName(String latestName) {
-        this.latestName = latestName;
-    }
-
-    public synchronized FeedbackPreferences preferences() {
-        return preferences;
-    }
-
-    public synchronized void preferences(FeedbackPreferences preferences) {
-        this.preferences = preferences;
-    }
-
-    public synchronized Optional<UUID> pinnedAssignment() {
-        return Optional.ofNullable(pinnedAssignment);
-    }
-
-    public synchronized void pinnedAssignment(UUID assignmentId) {
-        this.pinnedAssignment = assignmentId;
-    }
-
-    public synchronized long completedTotal() {
-        return completedTotal;
-    }
-
-    public synchronized void incrementCompletedTotal() {
-        completedTotal++;
-    }
-
-    public synchronized String rankCategory() {
-        return rankCategory;
-    }
-
-    public synchronized void rankCategory(String rankCategory) {
-        this.rankCategory = rankCategory;
-    }
-
-    public synchronized void add(QuestAssignment assignment) {
-        assignments.put(assignment.id(), assignment);
-    }
+    public UUID playerId() { return playerId; }
+    public synchronized String latestName() { return latestName; }
+    public synchronized void latestName(String latestName) { this.latestName = latestName; }
+    public synchronized FeedbackPreferences preferences() { return preferences; }
+    public synchronized void preferences(FeedbackPreferences preferences) { this.preferences = preferences; }
+    public synchronized Optional<UUID> pinnedAssignment() { return Optional.ofNullable(pinnedAssignment); }
+    public synchronized void pinnedAssignment(UUID assignmentId) { this.pinnedAssignment = assignmentId; }
+    public synchronized long completedTotal() { return completedTotal; }
+    public synchronized void incrementCompletedTotal() { completedTotal++; }
+    public synchronized String rankCategory() { return rankCategory; }
+    public synchronized void rankCategory(String rankCategory) { this.rankCategory = rankCategory; }
+    public synchronized void add(QuestAssignment assignment) { assignments.put(assignment.id(), assignment); }
 
     public synchronized QuestAssignment remove(UUID assignmentId) {
-        if (assignmentId.equals(pinnedAssignment)) {
-            pinnedAssignment = null;
-        }
+        if (assignmentId.equals(pinnedAssignment)) pinnedAssignment = null;
         return assignments.remove(assignmentId);
     }
 
@@ -96,14 +58,16 @@ public final class PlayerProfile {
         return Optional.ofNullable(assignments.get(assignmentId));
     }
 
-    public synchronized List<QuestAssignment> assignments() {
-        return List.copyOf(assignments.values());
+    public synchronized List<QuestAssignment> assignments() { return List.copyOf(assignments.values()); }
+
+    public synchronized List<QuestAssignment> activeAssignments() {
+        return assignments.values().stream()
+                .filter(assignment -> assignment.state() == AssignmentState.ACTIVE)
+                .toList();
     }
 
     public synchronized List<QuestAssignment> visibleAssignments() {
-        return assignments.values().stream()
-                .filter(assignment -> !assignment.state().terminal())
-                .toList();
+        return assignments.values().stream().filter(assignment -> !assignment.state().terminal()).toList();
     }
 
     public synchronized List<QuestAssignment> assignments(QuestScope scope) {
@@ -112,12 +76,25 @@ public final class PlayerProfile {
                 .toList();
     }
 
+    /** 4.1 compatibility view: assignments that still occupy the old rotation-slot model. */
     public synchronized List<QuestAssignment> assignments(QuestScope scope, String periodKey) {
         return assignments.values().stream()
                 .filter(assignment -> assignment.definition().scope() == scope)
                 .filter(assignment -> assignment.periodKey().equals(periodKey))
                 .filter(assignment -> assignment.state().occupiesRotationSlot())
                 .toList();
+    }
+
+    /** All assignments accepted in a period, including cancelled/expired entries that consume participation budget. */
+    public synchronized List<QuestAssignment> periodAssignments(QuestScope scope, String periodKey) {
+        return assignments.values().stream()
+                .filter(assignment -> assignment.definition().scope() == scope)
+                .filter(assignment -> assignment.periodKey().equals(periodKey))
+                .toList();
+    }
+
+    public synchronized int periodParticipationCount(QuestScope scope, String periodKey) {
+        return periodAssignments(scope, periodKey).size();
     }
 
     public synchronized long claimableCount() {
@@ -131,9 +108,7 @@ public final class PlayerProfile {
                 java.time.Instant deadline = assignment.state() == AssignmentState.COMPLETED ? expiry.plus(grace) : expiry;
                 if (now.isAfter(deadline) && assignment.expire()) {
                     expired.add(assignment);
-                    if (assignment.id().equals(pinnedAssignment)) {
-                        pinnedAssignment = null;
-                    }
+                    if (assignment.id().equals(pinnedAssignment)) pinnedAssignment = null;
                 }
             });
         }

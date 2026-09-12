@@ -15,6 +15,9 @@ import org.bukkit.configuration.file.YamlConfiguration;
 public record PluginSettings(
         Rotation rotation,
         Assignments assignments,
+        Participation participation,
+        Catalog catalog,
+        SkillsDisplay skillsDisplay,
         RankProgression rankProgression,
         Rerolls rerolls,
         Tracking tracking,
@@ -33,6 +36,7 @@ public record PluginSettings(
             Duration claimGrace,
             Duration recentHistoryExclusion) {}
 
+    /** Legacy slot keys now define Daily/Weekly period participation budgets. */
     public record Assignments(
             int baseDailySlots,
             int baseWeeklySlots,
@@ -41,15 +45,27 @@ public record PluginSettings(
             int maximumActiveManual,
             boolean multiQuestProgress) {}
 
+    public record Participation(
+            int maximumActiveQuests,
+            boolean allowAbandon,
+            boolean abandonConsumesPeriodBudget,
+            boolean manualAssignmentsCountTowardLimit) {}
+
+    public record Catalog(int dailyOffers, int weeklyOffers, boolean refreshOnPeriodChange) {}
+
+    public record SkillsDisplay(boolean enabled, String provider, Map<String, String> categoryMap) {
+        public SkillsDisplay {
+            categoryMap = Map.copyOf(categoryMap);
+        }
+    }
+
     public record RankProgression(
             boolean enabled,
             String provider,
             boolean fallbackPermissions,
             int bonusPerCategory,
             Map<String, Integer> categories) {
-        public RankProgression {
-            categories = Map.copyOf(categories);
-        }
+        public RankProgression { categories = Map.copyOf(categories); }
     }
 
     public record Rerolls(
@@ -96,9 +112,7 @@ public record PluginSettings(
             PinnedDisplay pinnedDisplay,
             int maximumPinned,
             List<Integer> progressThresholds) {
-        public Feedback {
-            progressThresholds = List.copyOf(progressThresholds);
-        }
+        public Feedback { progressThresholds = List.copyOf(progressThresholds); }
     }
 
     public record Security(
@@ -107,11 +121,7 @@ public record PluginSettings(
             int maximumNumberedPermission,
             int maximumSerializedItemBytes) {}
 
-    public enum PlaceholderRenderingMode {
-        SAFE,
-        LEGACY,
-        MINIMESSAGE
-    }
+    public enum PlaceholderRenderingMode { SAFE, LEGACY, MINIMESSAGE }
 
     public record Text(
             PlaceholderRenderingMode defaultPlaceholderRendering,
@@ -136,6 +146,30 @@ public record PluginSettings(
                 positive(yaml, "assignments.maximum-weekly-slots", 5),
                 positive(yaml, "assignments.maximum-active-manual", 20),
                 yaml.getBoolean("assignments.allow-one-action-to-progress-multiple-quests", true));
+
+        Participation participation = new Participation(
+                positive(yaml, "participation.maximum-active-quests", 1),
+                yaml.getBoolean("participation.allow-abandon", true),
+                yaml.getBoolean("participation.abandon-consumes-period-budget", true),
+                yaml.getBoolean("participation.manual-assignments-count-toward-limit", true));
+
+        Catalog catalog = new Catalog(
+                positive(yaml, "catalog.daily-offers", 7),
+                positive(yaml, "catalog.weekly-offers", 7),
+                yaml.getBoolean("catalog.refresh-on-period-change", true));
+
+        Map<String, String> skillMap = new LinkedHashMap<>();
+        ConfigurationSection skillsSection = yaml.getConfigurationSection("skills-display.category-map");
+        if (skillsSection != null) {
+            for (String key : skillsSection.getKeys(false)) {
+                String value = skillsSection.getString(key, "");
+                if (!value.isBlank()) skillMap.put(key.toLowerCase(Locale.ROOT), value.toUpperCase(Locale.ROOT));
+            }
+        }
+        SkillsDisplay skillsDisplay = new SkillsDisplay(
+                yaml.getBoolean("skills-display.enabled", true),
+                yaml.getString("skills-display.provider", "PLEXON_SKILLS"),
+                skillMap);
 
         Map<String, Integer> categories = new LinkedHashMap<>();
         ConfigurationSection categorySection = yaml.getConfigurationSection("rank-progression.categories");
@@ -203,10 +237,8 @@ public record PluginSettings(
                 positive(yaml, "security.maximum-serialized-item-bytes", 65536));
 
         Text text = new Text(
-                enumValue(
-                        PlaceholderRenderingMode.class,
-                        yaml.getString("text.placeholder-rendering.default"),
-                        PlaceholderRenderingMode.SAFE),
+                enumValue(PlaceholderRenderingMode.class,
+                        yaml.getString("text.placeholder-rendering.default"), PlaceholderRenderingMode.SAFE),
                 yaml.getBoolean("text.placeholder-rendering.allow-legacy", true),
                 yaml.getBoolean("text.placeholder-rendering.allow-minimessage", true));
 
@@ -218,7 +250,8 @@ public record PluginSettings(
                 || assignments.maximumWeeklySlots() < assignments.baseWeeklySlots()) {
             throw new IllegalArgumentException("Assignment maximum slots cannot be lower than base slots");
         }
-        return new PluginSettings(rotation, assignments, rank, rerolls, tracking, storage, claims, feedback, security, text, diagnostics);
+        return new PluginSettings(rotation, assignments, participation, catalog, skillsDisplay,
+                rank, rerolls, tracking, storage, claims, feedback, security, text, diagnostics);
     }
 
     private static Duration duration(YamlConfiguration yaml, String path, String fallback) {
@@ -227,9 +260,7 @@ public record PluginSettings(
 
     private static int positive(YamlConfiguration yaml, String path, int fallback) {
         int value = yaml.getInt(path, fallback);
-        if (value <= 0) {
-            throw new IllegalArgumentException(path + " must be positive");
-        }
+        if (value <= 0) throw new IllegalArgumentException(path + " must be positive");
         return value;
     }
 
@@ -241,9 +272,7 @@ public record PluginSettings(
     }
 
     private static <E extends Enum<E>> E enumValue(Class<E> type, String value, E fallback) {
-        if (value == null) {
-            return fallback;
-        }
+        if (value == null) return fallback;
         try {
             return Enum.valueOf(type, value.toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException ignored) {
@@ -251,4 +280,3 @@ public record PluginSettings(
         }
     }
 }
-

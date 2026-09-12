@@ -1,3 +1,28 @@
+# PlexonQuests 4.2 configuration changes
+
+4.2 keeps `schema-version: 1`. Existing Daily/Weekly slot configuration now defines **period participation budget** instead of simultaneous normal assignments.
+
+```yaml
+participation:
+  maximum-active-quests: 1
+  allow-abandon: true
+  abandon-consumes-period-budget: true
+  manual-assignments-count-toward-limit: true
+catalog:
+  daily-offers: 7
+  weekly-offers: 7
+  refresh-on-period-change: true
+skills-display:
+  enabled: true
+  provider: PLEXON_SKILLS
+```
+
+`assignments.base-*-slots`, `assignments.maximum-*-slots` and numbered slot permissions remain in use for participation budgets. `skills-display` is presentation-only: missing/incompatible PlexonSkills never disables PlexonQuests and no skill eligibility gate is added implicitly.
+
+`menus.yml` uses `layout-version: 4` and `common.filler.material` for player-journal filler. Exact bundled v3 defaults are backed up/replaced; customized older menu files are backed up and preserved with only a safe layout-marker advance.
+
+---
+
 # Configuration reference
 
 All YAML files use `schema-version: 1`. PlexonQuests installs missing defaults without overwriting existing files. `/quests reload` parses a complete candidate snapshot off-thread, validates activation requirements, then swaps the immutable snapshot as one operation. If activation fails, the last good snapshot stays active.
