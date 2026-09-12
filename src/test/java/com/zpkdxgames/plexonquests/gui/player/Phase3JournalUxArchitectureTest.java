@@ -145,7 +145,7 @@ class Phase3JournalUxArchitectureTest {
         assertTrue(source.contains("text.progressBarMarkup(total.percentage())"));
         assertFalse(source.contains("progress.bar()"));
         assertFalse(source.contains("total.bar()"));
-        assertFalse(source.contains("safe(reward.display())");
+        assertFalse(source.contains("safe(reward.display())"));
         assertFalse(source.contains("safe(rewardSummary("));
         assertTrue(source.contains("reward.display()"));
     }
