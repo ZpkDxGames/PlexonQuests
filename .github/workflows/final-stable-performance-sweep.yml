@@ -17,7 +17,7 @@ jobs:
           ref: revamp/4.1.0-full-standard
           fetch-depth: 0
 
-      - name: Apply stable hot-path and release sweep
+      - name: Apply final stable source sweep
         shell: bash
         run: |
           set -euo pipefail
@@ -27,30 +27,27 @@ jobs:
           def replace_once(path, old, new):
               p = Path(path)
               text = p.read_text()
-              if text.count(old) != 1:
-                  raise SystemExit(f'{path}: marker mismatch for {old[:80]!r}')
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected one marker, found {count}: {old[:100]!r}')
               p.write_text(text.replace(old, new, 1))
 
-          def insert_after(path, marker, addition):
-              replace_once(path, marker, marker + addition)
-
-          # Global server-wide objective type gate.
+          # One allocation-free server-wide type gate before per-player/material/entity routing.
           path = 'src/main/java/com/zpkdxgames/plexonquests/service/ProgressService.java'
           marker = '    /** Cheap material-aware interest gate backed by the player\'s candidate index. */\n'
-          addition = '\n'.join([
-              '    /**',
-              '     * Allocation-free server-wide type gate for very common Bukkit events. This is only a',
-              '     * coarse rejection check; the per-player/material/entity index remains authoritative.',
-              '     */',
-              '    public boolean anyInterested(ObjectiveType type) {',
-              '        Set<UUID> players = interestedPlayers.get(type);',
-              '        return players != null && !players.isEmpty();',
-              '    }',
-              '',
-          ])
+          addition = '''    /**
+           * Allocation-free server-wide type gate for common Bukkit events. This is a coarse
+           * rejection check only; the existing per-player candidate index remains authoritative.
+           */
+          public boolean anyInterested(ObjectiveType type) {
+              Set<UUID> players = interestedPlayers.get(type);
+              return players != null && !players.isEmpty();
+          }
+
+          '''
           replace_once(path, marker, addition + marker)
 
-          # Common high-frequency listeners reject globally irrelevant event types before detailed context work.
+          # Reject globally irrelevant common events before entity/recipe/inventory context work.
           path = 'src/main/java/com/zpkdxgames/plexonquests/objective/tracker/CoreObjectiveListener.java'
           gates = {
               '    public void onPlace(BlockPlaceEvent event) {\n': 'PLACE_BLOCK',
@@ -64,10 +61,16 @@ jobs:
               '    public void onWorldChange(PlayerChangedWorldEvent event) {\n': 'VISIT_WORLD',
               '    public void onAdvancement(PlayerAdvancementDoneEvent event) {\n': 'COMPLETE_ADVANCEMENT',
           }
+          p = Path(path)
+          text = p.read_text()
           for signature, objective in gates.items():
-              insert_after(path, signature, f'        if (!progress.anyInterested(ObjectiveType.{objective})) {{\n            return;\n        }}\n')
+              if text.count(signature) != 1:
+                  raise SystemExit(f'{path}: listener marker changed: {signature!r}')
+              gate = signature + f'        if (!progress.anyInterested(ObjectiveType.{objective})) {{\n            return;\n        }}\n'
+              text = text.replace(signature, gate, 1)
+          p.write_text(text)
 
-          # Sampler avoids sqrt for idle movement and rejected teleport/outlier deltas.
+          # Idle/outlier samples no longer pay Math.sqrt.
           path = 'src/main/java/com/zpkdxgames/plexonquests/objective/tracker/ActivitySampler.java'
           replace_once(path,
               '        double maximumDelta = settings.travelMaximumDelta();\n',
@@ -87,12 +90,14 @@ jobs:
               raise SystemExit('ActivitySampler movement marker changed')
           p.write_text(text.replace(old, new, 1))
 
-          # Compatibility menu events are primary-thread confined: HashMap is sufficient and the shared router owns click policy.
+          # GUI listener is primary-thread confined; avoid CHM and duplicate unsafe-click lookup.
           path = 'src/main/java/com/zpkdxgames/plexonquests/gui/MenuListener.java'
           p = Path(path)
           text = p.read_text()
-          if text.count('import java.util.EnumSet;\n') != 1 or text.count('import java.util.concurrent.ConcurrentHashMap;\n') != 1:
-              raise SystemExit('MenuListener imports changed')
+          if text.count('import java.util.EnumSet;\n') != 1:
+              raise SystemExit('MenuListener EnumSet import changed')
+          if text.count('import java.util.concurrent.ConcurrentHashMap;\n') != 1:
+              raise SystemExit('MenuListener ConcurrentHashMap import changed')
           text = text.replace('import java.util.EnumSet;\n', '', 1)
           text = text.replace('import java.util.concurrent.ConcurrentHashMap;\n', 'import java.util.HashMap;\n', 1)
           start = text.find('    private static final EnumSet<ClickType> UNSAFE = EnumSet.of(')
@@ -101,155 +106,64 @@ jobs:
               raise SystemExit('MenuListener UNSAFE block changed')
           text = text[:start] + text[end:]
           if text.count('private final Map<UUID, Long> lastClick = new ConcurrentHashMap<>();') != 1:
-              raise SystemExit('MenuListener lastClick changed')
+              raise SystemExit('MenuListener lastClick marker changed')
           text = text.replace('private final Map<UUID, Long> lastClick = new ConcurrentHashMap<>();',
                               'private final Map<UUID, Long> lastClick = new HashMap<>();', 1)
           if text.count('                || UNSAFE.contains(event.getClick())\n') != 1:
-              raise SystemExit('MenuListener unsafe click marker changed')
+              raise SystemExit('MenuListener unsafe-condition marker changed')
           p.write_text(text.replace('                || UNSAFE.contains(event.getClick())\n', '', 1))
 
-          # Journal lore conversion avoids stream/lambda churn during simultaneous GUI opens.
-          path = 'src/main/java/com/zpkdxgames/plexonquests/gui/Phase2JournalService.java'
-          old = '        return lines.stream().map(line -> line == null || line.isBlank() ? Component.empty() : text.parse(line)).toList();\n'
-          new = '\n'.join([
-              '        if (lines.isEmpty()) {',
-              '            return List.of();',
-              '        }',
-              '        List<Component> components = new ArrayList<>(lines.size());',
-              '        for (String line : lines) {',
-              '            components.add(line == null || line.isBlank() ? Component.empty() : text.parse(line));',
-              '        }',
-              '        return List.copyOf(components);',
-              '',
-          ])
-          replace_once(path, old, new)
-
-          # Regression: global interest state follows reindex/remove lifecycle.
-          path = 'src/test/java/com/zpkdxgames/plexonquests/service/ProgressServiceInterestTest.java'
-          replace_once(path,
-              '        assertFalse(contains(harness.service().interestedPlayerIds(ObjectiveType.PLAY_TIME), playerId));\n',
-              '        assertFalse(contains(harness.service().interestedPlayerIds(ObjectiveType.PLAY_TIME), playerId));\n        assertTrue(harness.service().anyInterested(ObjectiveType.TRAVEL_DISTANCE));\n        assertFalse(harness.service().anyInterested(ObjectiveType.PLAY_TIME));\n')
-          replace_once(path,
-              '        assertFalse(contains(harness.service().interestedPlayerIds(ObjectiveType.TRAVEL_DISTANCE), playerId));\n    }\n\n    @Test\n    void requirementProfilesExposeOnlyExpensiveContextActuallyNeeded()',
-              '        assertFalse(contains(harness.service().interestedPlayerIds(ObjectiveType.TRAVEL_DISTANCE), playerId));\n        assertFalse(harness.service().anyInterested(ObjectiveType.TRAVEL_DISTANCE));\n    }\n\n    @Test\n    void requirementProfilesExposeOnlyExpensiveContextActuallyNeeded()')
-
-          # Preserve detailed per-player fast-gate listener tests after adding the coarse global gate.
-          path = 'src/test/java/com/zpkdxgames/plexonquests/objective/tracker/CoreObjectiveListenerTest.java'
-          for marker, objective in [
-              ('        when(progress.interested(player, ObjectiveType.CRAFT_ITEM, Material.DIAMOND)).thenReturn(false);\n', 'CRAFT_ITEM'),
-              ('        when(progress.interested(player, ObjectiveType.BREW_POTION)).thenReturn(false);\n', 'BREW_POTION'),
-              ('        when(progress.interested(killer, ObjectiveType.KILL_ENTITY, EntityType.ZOMBIE)).thenReturn(false);\n', 'KILL_ENTITY'),
-          ]:
-              insert_after(path, marker.replace('        when(progress.interested', '        when(progress.anyInterested(ObjectiveType.' + objective + ')).thenReturn(true);\n        when(progress.interested') if False else '', '')
-          p = Path(path)
-          text = p.read_text()
-          replacements = [
-              ('        when(progress.interested(player, ObjectiveType.CRAFT_ITEM, Material.DIAMOND)).thenReturn(false);\n', '        when(progress.anyInterested(ObjectiveType.CRAFT_ITEM)).thenReturn(true);\n        when(progress.interested(player, ObjectiveType.CRAFT_ITEM, Material.DIAMOND)).thenReturn(false);\n'),
-              ('        when(progress.interested(player, ObjectiveType.BREW_POTION)).thenReturn(false);\n', '        when(progress.anyInterested(ObjectiveType.BREW_POTION)).thenReturn(true);\n        when(progress.interested(player, ObjectiveType.BREW_POTION)).thenReturn(false);\n'),
-              ('        when(progress.interested(killer, ObjectiveType.KILL_ENTITY, EntityType.ZOMBIE)).thenReturn(false);\n', '        when(progress.anyInterested(ObjectiveType.KILL_ENTITY)).thenReturn(true);\n        when(progress.interested(killer, ObjectiveType.KILL_ENTITY, EntityType.ZOMBIE)).thenReturn(false);\n'),
-          ]
-          for old, new in replacements:
-              if text.count(old) != 1:
-                  raise SystemExit('CoreObjectiveListenerTest marker changed')
-              text = text.replace(old, new, 1)
-          helper = '    private static CoreObjectiveListener listener(ProgressService progress, BlockOriginService origins) {\n'
-          global_test = '\n'.join([
-              '    @Test',
-              '    void globallyUninterestingDeathReturnsBeforeEntityInspection() {',
-              '        ProgressService progress = mock(ProgressService.class);',
-              '        CoreObjectiveListener listener = listener(progress, mock(BlockOriginService.class));',
-              '        EntityDeathEvent event = mock(EntityDeathEvent.class);',
-              '        when(progress.anyInterested(ObjectiveType.KILL_ENTITY)).thenReturn(false);',
-              '',
-              '        listener.onDeath(event);',
-              '',
-              '        verify(event, never()).getEntity();',
-              '    }',
-              '',
-          ])
-          if text.count(helper) != 1:
-              raise SystemExit('CoreObjectiveListenerTest helper marker changed')
-          p.write_text(text.replace(helper, global_test + helper, 1))
-
-          # Final stable version identity.
+          # Pure stable identity: no RC/SNAPSHOT suffix in the product version.
           replace_once('pom.xml', '<version>4.1.0-rc.1</version>', '<version>4.1.0</version>')
-          replace_once('pom.xml', '<project.build.outputTimestamp>2026-09-10T00:00:00Z</project.build.outputTimestamp>',
-                       '<project.build.outputTimestamp>2026-09-12T00:00:00Z</project.build.outputTimestamp>')
+          replace_once('pom.xml',
+              '<project.build.outputTimestamp>2026-09-10T00:00:00Z</project.build.outputTimestamp>',
+              '<project.build.outputTimestamp>2026-09-12T00:00:00Z</project.build.outputTimestamp>')
 
-          # Changelog stable entry.
-          changelog = '\n'.join([
-              '## [4.1.0] - 2026-09-12', '',
-              '- Promotes the full-source 4.1 revamp to the stable product line on Java 25 / Paper 26.2 / PlexonCore 2.0.4.',
-              '- Adds a server-wide objective-type interest gate ahead of common combat, crafting, fishing, brewing, smelting, enchanting, world-change, advancement, and block-place listeners; irrelevant events exit before detailed player/entity/inventory work.',
-              '- Preserves per-player material/entity candidate indexes, lazy origin/maturity/spawn-reason context, direct in-memory main-thread progression, coalesced dirty assignment snapshots, and the bounded single-writer SQLite/WAL model.',
-              '- Reduces travel/play-time sampler CPU by avoiding square-root work for stationary and rejected outlier movement.',
-              '- Removes unnecessary concurrent-map and redundant click-type overhead from the compatibility GUI listener while preserving cancellation, debounce, exact-holder validation, and next-tick inventory transitions.',
-              '- Fixes configured MiniMessage presentation and uses the shared configurable progress renderer so low non-zero progress remains visible.',
-              '- Keeps the mature quest, reward, reroll, provenance, rotation, prerequisite, integration, persistence, public API, and transaction authorities unchanged where the full audit found no demonstrated defect.',
-              '- Stable rollback baseline is `v4.0.0` at `57a235460e5e936ca931ee8d0e96b0a424f134f8`.', '',
-          ])
+          # Stable changelog entry.
+          changelog = '''## [4.1.0] - 2026-09-12
+
+          - Final stable full-source revamp for Java 25, Paper 26.2 and PlexonCore 2.0.4.
+          - Hardened premium Quest Journal GUI interaction, formatting and progress presentation.
+          - Added server-wide objective-type fast rejection before detailed common-event routing while preserving per-player material/entity indexes.
+          - Reduced activity-sampler CPU for stationary and rejected outlier movement.
+          - Removed unnecessary concurrent-map and duplicate click-policy overhead from the compatibility GUI listener.
+          - Preserved the mature quest lifecycle, economy, persistence, provenance, prerequisite, rotation, reroll, integration and transaction authorities.
+          - Stable rollback baseline: `v4.0.0` (`57a235460e5e936ca931ee8d0e96b0a424f134f8`).
+
+          '''
           replace_once('CHANGELOG.md', '## [Unreleased]\n\n', '## [Unreleased]\n\n' + changelog)
 
-          # README final stable identity and rollback.
-          p = Path('README.md')
-          text = p.read_text()
-          pairs = [
-              ('PlexonQuests **4.0.0** is the stable premium quest-journal line for Paper 26.2. It preserves the mature objective, persistence, PlexonCore provenance, rotation and reward-transaction engines while adding prerequisite-aware discovery, derived journal states, tracked-quest terminology, richer immutable API views and the final Phase 3 premium journal UX.', 'PlexonQuests **4.1.0** is the stable Paper 26.2 quest platform. It keeps the mature objective, persistence, PlexonCore provenance, rotation and reward-transaction engines while hardening GUI interaction safety, MiniMessage presentation, progress readability, and high-concurrency listener hot paths.'),
-              ('Back up `plugins/PlexonQuests/` before the first 4.0 startup.', 'Back up `plugins/PlexonQuests/` before upgrading to 4.1.'),
-              ('Install `PlexonQuests-4.0.0.jar` from the stable GitHub release.', 'Install `PlexonQuests-4.1.0.jar` from the stable GitHub release.'),
-              ('Keep the existing 3.3.1 data directory; 4.0 preserves SQLite assignments, frozen definition snapshots, claim identities, preferences and history tables.', 'Keep the existing PlexonQuests data directory; 4.1 introduces no storage/schema migration and preserves assignments, frozen definition snapshots, claim identities, preferences and history.'),
-              ('Perform the operational checks in `docs/RUNTIME_CERTIFICATION_4.0.0.md` before production cutover/soak sign-off where required.', 'Use `docs/PERFORMANCE.md` for production profiling and concurrency acceptance on the target Paper host.'),
-              ('The final RC3 54-slot control geometry is:', 'The stable 4.1 journal control geometry is:'),
-              ('- final RC3, accepted Phase 3 and performance ancestry;', '- stable 4.1 source lineage plus accepted Phase 3 and performance ancestry;'),
-              ('Live PlexonCraft runtime certification and soak remain deployment follow-ups and may be recorded as `NOT_EXECUTED` in GitHub release provenance. Rollback baseline: `v3.3.1` at `b74fc212d5aea41a0e01e9bc1bf5c5382302d014`.', 'Live host profiling remains environment-specific and must be measured rather than inferred from unit tests. Stable rollback baseline: `v4.0.0` at `57a235460e5e936ca931ee8d0e96b0a424f134f8`.'),
-          ]
-          for old, new in pairs:
-              if text.count(old) != 1:
-                  raise SystemExit('README marker changed: ' + old[:50])
-              text = text.replace(old, new, 1)
-          docs_marker = '- [3.3.1 -> 4.0 migration and rollback](docs/MIGRATION_3.3.1_TO_4.0.0.md)\n'
-          if 'FULL_REVAMP_AUDIT_4.1.0.md' not in text:
-              text = text.replace(docs_marker, '- [4.1 full-revamp audit](docs/FULL_REVAMP_AUDIT_4.1.0.md)\n' + docs_marker, 1)
-          p.write_text(text)
+          # Release notes consumed by the guarded stable publisher.
+          notes = '''# PlexonQuests 4.1.0
 
-          # Performance model documents final fast gates without fake live numbers.
-          perf_marker = '- Gameplay events inspect only matching buckets; they do not scan the full quest registry.\n'
-          perf_add = '\n'.join([
-              '- Common high-frequency listeners first use a server-wide objective-type interest gate, then the existing per-player/material/entity index; when nobody online can consume an event type, detailed entity, recipe, inventory, and contribution work is skipped.',
-              '- Travel/play-time sampling skips square-root calculation for stationary/rejected deltas.',
-              '- Custom inventory listeners reject non-owned inventories immediately; accepted semantic actions remain ordinary left/right clicks only and inventory transitions are deferred to the next primary-thread task with exact-holder validation.',
-          ]) + '\n'
-          replace_once('docs/PERFORMANCE.md', perf_marker, perf_marker + perf_add)
+          PlexonQuests 4.1.0 is the final stable full-revamp release for Paper 26.2 and Java 25.
 
-          # Stable release notes consumed by the guarded publisher.
-          notes = [
-              '# PlexonQuests 4.1.0', '',
-              'PlexonQuests 4.1.0 is the final stable full-revamp release for Paper 26.2 and Java 25.', '',
-              '## Player experience', '',
-              '- Corrects MiniMessage rendering across quest rewards, objectives, descriptions, history, rarity labels, and objective-completion feedback.',
-              '- Uses the shared configurable progress renderer throughout the journal; low non-zero progress is visibly represented instead of looking empty.',
-              '- Keeps the premium journal navigation and state model while hardening inventory transitions behind next-tick, exact-holder validation.',
-              '- Removes the unreachable shift-left reroll hint from compatibility cards; rerolls remain available from Quest Details.', '',
-              '## High-concurrency runtime', '',
-              '- Adds a coarse global interest gate before common gameplay listeners, followed by the existing per-player material/entity candidate index.',
-              '- Avoids detailed entity, projectile, recipe, inventory, and contribution work when no online quest can consume that event type.',
-              '- Keeps block-origin bookkeeping correct and bounded; block-break provenance is deliberately not skipped when objective interest is empty.',
-              '- Reduces travel/play-time sampler CPU for idle and rejected movement.',
-              '- Keeps ordinary progress mutation in memory on the primary thread while SQLite writes remain coalesced on the bounded single-writer WAL queue.',
-              '- Removes unnecessary concurrent-map overhead from the main-thread compatibility GUI click debounce path.', '',
-              '## Compatibility and safety', '',
-              '- No storage/schema migration.',
-              '- No quest/reward economy rebalance.',
-              '- No public API or command removal.',
-              '- Paper API: 26.2.',
-              '- PlexonCore: 2.0.4.',
-              '- Rollback: `v4.0.0` (`57a235460e5e936ca931ee8d0e96b0a424f134f8`).', '',
-              'The release pipeline rebuilds and tests exact stable `main`, validates the installable JAR and dependency boundaries, publishes checksum/test/provenance evidence, then downloads and verifies the published assets again. Live MSPT is host-dependent and is measured on the target server rather than fabricated from unit tests.',
-          ]
-          Path('.release/RELEASE_NOTES_4.1.0.md').write_text('\n'.join(notes) + '\n')
-          rc = Path('.release/RELEASE_NOTES_4.1.0-rc.1.md')
-          if rc.exists():
-              rc.unlink()
+          ## Player experience
+
+          - Premium Quest Journal GUI with hardened click routing and next-tick exact-holder transitions.
+          - Correct MiniMessage presentation across quest-facing text and readable low-progress rendering.
+          - Clear active, eligible, tracked, claimable, completed and locked states without changing quest economy semantics.
+
+          ## High-concurrency runtime
+
+          - Common gameplay listeners now perform a constant-time server-wide objective-type rejection before detailed entity, recipe, inventory or contribution work.
+          - Existing per-player material/entity candidate indexes remain the authoritative second-stage filter.
+          - Travel/play-time sampling skips square-root work for stationary and rejected outlier deltas.
+          - GUI click debounce uses a main-thread HashMap rather than a concurrent map and relies on the centralized click router for semantic action validation.
+          - Progress remains in-memory on the primary thread while persistence stays on the bounded single-writer SQLite/WAL path.
+
+          ## Compatibility
+
+          - No storage/schema migration.
+          - No quest/reward economy rebalance.
+          - No public API or command removal.
+          - Paper API: 26.2.
+          - PlexonCore: 2.0.4.
+          - Rollback: `v4.0.0` (`57a235460e5e936ca931ee8d0e96b0a424f134f8`).
+
+          The stable release workflow rebuilds and tests the exact `main` SHA, verifies the installable JAR and dependency boundaries, publishes SHA-256/test/provenance evidence, then downloads and verifies the published assets again. Live MSPT remains host-dependent and must be measured on the target server rather than inferred from unit tests.
+          '''
+          Path('.release/RELEASE_NOTES_4.1.0.md').write_text(notes.replace('\n          ', '\n'))
 
           pom = Path('pom.xml').read_text()
           if '<version>4.1.0</version>' not in pom or '4.1.0-rc.1' in pom or '4.1.0-SNAPSHOT' in pom:
@@ -261,10 +175,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git rm .github/workflows/final-stable-performance-sweep.yml
           git config user.name 'Tonim'
           git config user.email '99552287+ZpkDxGames@users.noreply.github.com'
-          git add -A
+          git add pom.xml CHANGELOG.md .release/RELEASE_NOTES_4.1.0.md \
+            src/main/java/com/zpkdxgames/plexonquests/service/ProgressService.java \
+            src/main/java/com/zpkdxgames/plexonquests/objective/tracker/CoreObjectiveListener.java \
+            src/main/java/com/zpkdxgames/plexonquests/objective/tracker/ActivitySampler.java \
+            src/main/java/com/zpkdxgames/plexonquests/gui/MenuListener.java
           git diff --cached --check
           git commit -m 'Finalize PlexonQuests 4.1.0 stable performance and GUI'
           git push origin HEAD:revamp/4.1.0-full-standard
