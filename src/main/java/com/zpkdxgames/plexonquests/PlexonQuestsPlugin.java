@@ -176,7 +176,7 @@ public class PlexonQuestsPlugin extends JavaPlugin {
     private void registerListeners(
             RewardService rewards, TextService text, MenuService menus, Phase2JournalService journal) {
         var manager = Bukkit.getPluginManager();
-        manager.registerEvents(new MenuListener(configs), this);
+        manager.registerEvents(new MenuListener(this, configs), this);
         manager.registerEvents(journal, this);
         manager.registerEvents(tracking, this);
         manager.registerEvents(completionHistory, this);

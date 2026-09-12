@@ -706,11 +706,14 @@ public final class Phase2JournalService implements Listener {
     public void onClick(InventoryClickEvent event) {
         if (!(event.getView().getTopInventory().getHolder() instanceof Holder holder)) return;
         event.setCancelled(true);
-        if (!(event.getWhoClicked() instanceof Player player)) return;
+        if (!(event.getWhoClicked() instanceof Player player)
+                || !MenuInteractionRouter.supportsAction(event.getClick())) return;
         int slot = event.getRawSlot();
         if (slot < 0 || slot >= event.getView().getTopInventory().getSize()) return;
         Action action = holder.actions.get(slot);
-        if (action != null && holder.acceptInteraction()) action.run(player, event.getClick());
+        if (action == null || !holder.acceptInteraction()) return;
+        ClickType click = event.getClick();
+        MenuInteractionRouter.defer(plugin, player, holder, () -> action.run(player, click));
     }
 
     @EventHandler(priority = EventPriority.HIGHEST)
