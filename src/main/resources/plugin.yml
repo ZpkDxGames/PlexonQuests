@@ -1,7 +1,7 @@
 name: PlexonQuests
 version: '${project.version}'
 main: com.zpkdxgames.plexonquests.PlexonQuestsPlugin
-description: Premium quest journal, progression, rewards, and history for Paper.
+description: Premium join-based quest board, progression, rewards, skills context, and history for Paper.
 api-version: '26.2'
 load: POSTWORLD
 author: Tonim (ZpkDxGames)
@@ -17,20 +17,21 @@ softdepend:
   - PlexonCrates
   - PlexonShops
   - PlexonDailyRewards
+  - PlexonSkills
   - PlexonChats
 
 commands:
   quests:
-    description: Open and manage your premium quest journal.
-    usage: /quests [overview|active|available|categories|tracked|completed|statistics|help|daily|weekly|milestones|history|settings|info]
+    description: Open and manage your Plexon quest board.
+    usage: /quests [current|active|available|daily|weekly|milestones|completed|history|skills|stats|help]
     aliases: [quest, pquests, plexonquests]
 
 permissions:
   plexonquests.use:
-    description: Open and browse the quest journal.
+    description: Open and browse the quest board.
     default: true
   plexonquests.pin:
-    description: Track/untrack quests (3.x permission retained for pin compatibility).
+    description: Track/untrack the running quest.
     default: true
   plexonquests.history:
     description: Browse personal quest history.
@@ -39,7 +40,7 @@ permissions:
     description: Claim completed quest rewards.
     default: true
   plexonquests.reroll:
-    description: Reroll eligible rotating quests.
+    description: Compatibility permission for the deprecated reroll command.
     default: true
   plexonquests.settings:
     description: Change personal quest feedback settings.
@@ -90,3 +91,6 @@ permissions:
     default: false
   plexonquests.bypass.slot-limit:
     default: false
+  plexonquests.bypass.active-limit:
+    description: Allow administrative/plugin flows to exceed the normal active quest limit.
+    default: op

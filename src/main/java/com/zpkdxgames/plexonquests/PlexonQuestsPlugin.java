@@ -19,6 +19,7 @@ import com.zpkdxgames.plexonquests.integration.core.CoreBridge;
 import com.zpkdxgames.plexonquests.integration.core.CoreBridgeFactory;
 import com.zpkdxgames.plexonquests.integration.core.CoreOriginMigrator;
 import com.zpkdxgames.plexonquests.integration.core.CoreRuntimeCoordinator;
+import com.zpkdxgames.plexonquests.integration.skills.PlexonSkillsBridge;
 import com.zpkdxgames.plexonquests.objective.tracker.ActivitySampler;
 import com.zpkdxgames.plexonquests.objective.tracker.CoreObjectiveListener;
 import com.zpkdxgames.plexonquests.persistence.StorageService;
@@ -27,6 +28,7 @@ import com.zpkdxgames.plexonquests.presentation.QuestNotificationListener;
 import com.zpkdxgames.plexonquests.presentation.TextService;
 import com.zpkdxgames.plexonquests.quest.AssignmentState;
 import com.zpkdxgames.plexonquests.reward.RewardService;
+import com.zpkdxgames.plexonquests.rotation.QuestCatalogService;
 import com.zpkdxgames.plexonquests.rotation.RerollService;
 import com.zpkdxgames.plexonquests.rotation.RotationService;
 import com.zpkdxgames.plexonquests.service.AssignmentService;
@@ -37,6 +39,7 @@ import com.zpkdxgames.plexonquests.service.PlayerLifecycleListener;
 import com.zpkdxgames.plexonquests.service.ProfileService;
 import com.zpkdxgames.plexonquests.service.ProgressService;
 import com.zpkdxgames.plexonquests.service.QuestEligibilityService;
+import com.zpkdxgames.plexonquests.service.QuestParticipationService;
 import com.zpkdxgames.plexonquests.service.QuestPrerequisiteService;
 import com.zpkdxgames.plexonquests.service.QuestTrackingService;
 import java.time.Duration;
@@ -109,6 +112,10 @@ public class PlexonQuestsPlugin extends JavaPlugin {
             tracking = new QuestTrackingService(configs, profiles);
             QuestEligibilityService eligibility = new QuestEligibilityService(integrations, prerequisites, completionHistory);
             rotations = new RotationService(this, configs, storage, assignments, progress, eligibility);
+            QuestCatalogService catalog = new QuestCatalogService(this, configs, storage, eligibility);
+            QuestParticipationService participation = new QuestParticipationService(
+                    this, configs, storage, profiles, assignments, progress, eligibility, tracking);
+            PlexonSkillsBridge skills = new PlexonSkillsBridge(this, integrations);
             TextService text = new TextService(configs);
             effects = new EffectService(this, configs, profiles, text);
             progress.observer(effects);
@@ -131,11 +138,13 @@ public class PlexonQuestsPlugin extends JavaPlugin {
                     profiles,
                     storage,
                     rewards,
-                    rerolls,
                     eligibility,
                     prerequisites,
                     completionHistory,
                     tracking,
+                    catalog,
+                    participation,
+                    skills,
                     text);
 
             registerListeners(rewards, text, menus, phase2Journal);
@@ -269,9 +278,13 @@ public class PlexonQuestsPlugin extends JavaPlugin {
                 }
                 long active = profile.assignments().stream()
                         .filter(assignment -> assignment.state() == AssignmentState.ACTIVE).count();
-                player.sendMessage(text.rawMessage("join-reminder", Map.of(
-                        "active", Long.toString(active),
-                        "claimable", Long.toString(profile.claimableCount()))));
+                if (active == 0L) {
+                    player.sendMessage(text.parse("<gray>You have no quest joined. <white>Use <aqua>/quests</aqua> to choose one."));
+                } else {
+                    player.sendMessage(text.rawMessage("join-reminder", Map.of(
+                            "active", Long.toString(active),
+                            "claimable", Long.toString(profile.claimableCount()))));
+                }
             }, delay);
         });
     }

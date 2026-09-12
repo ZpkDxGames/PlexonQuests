@@ -11,36 +11,19 @@ import org.junit.jupiter.api.Test;
 class Phase3JournalUxArchitectureTest {
     private static final Path JOURNAL = Path.of(
             "src/main/java/com/zpkdxgames/plexonquests/gui/Phase2JournalService.java");
+    private static final Path PARTICIPATION = Path.of(
+            "src/main/java/com/zpkdxgames/plexonquests/service/QuestParticipationService.java");
+    private static final Path ROTATION = Path.of(
+            "src/main/java/com/zpkdxgames/plexonquests/rotation/RotationService.java");
     private static final Path COMMAND = Path.of(
             "src/main/java/com/zpkdxgames/plexonquests/command/Phase2QuestCommand.java");
 
     @Test
-    void playerJournalNoLongerDelegatesIntoLegacyMenuFamily() throws IOException {
+    void playerJournalIsJoinBasedAndDoesNotBecomeAssignmentAuthority() throws IOException {
         String source = Files.readString(JOURNAL);
-        assertFalse(source.contains("legacy.open"));
-        assertFalse(source.contains("MenuContext.journal"));
-        assertTrue(source.contains("JournalNavigationContext"));
-    }
-
-    @Test
-    void playerJournalDoesNotExposeEngineeringTerminology() throws IOException {
-        String source = Files.readString(JOURNAL);
-        assertFalse(source.contains("Definition Health"));
-        assertFalse(source.contains("SQLite"));
-        assertFalse(source.contains("Prerequisite graph"));
-        assertFalse(source.contains("Accept Quest"));
-        assertFalse(source.contains("Pin Quest"));
-        assertFalse(source.contains("STALE_REVISION"));
-    }
-
-    @Test
-    void stateChangingActionsStillUseExistingAuthorities() throws IOException {
-        String source = Files.readString(JOURNAL);
+        assertTrue(source.contains("participation.join(player, offer)"));
+        assertTrue(source.contains("participation.abandon(p, assignment.id())"));
         assertTrue(source.contains("rewards.claim(player, live)"));
-        assertTrue(source.contains("tracking.toggle(player, assignmentId)"));
-        assertTrue(source.contains("rerolls.prepare(player, live"));
-        assertTrue(source.contains("rerolls.confirm(p)"));
-        assertTrue(source.contains("storage.history(player.getUniqueId()"));
         assertFalse(source.contains("new AssignmentService"));
         assertFalse(source.contains("new ProgressService"));
     }
@@ -53,100 +36,80 @@ class Phase3JournalUxArchitectureTest {
     }
 
     @Test
-    void assignmentMechanismsRemainTruthfulAndNoManualAcceptIsInvented() throws IOException {
+    void catalogAndHistoryRenderingValidateExactOpenHolder() throws IOException {
         String source = Files.readString(JOURNAL);
-        assertTrue(source.contains("May be assigned by the daily rotation."));
-        assertTrue(source.contains("May be assigned by the weekly rotation."));
-        assertTrue(source.contains("Starts automatically when its requirements are met."));
-        assertTrue(source.contains("Assigned by server staff."));
-        assertFalse(source.contains("Accept Quest"));
-    }
-
-    @Test
-    void emptyStatesAreActionableAndUsePlayerLanguage() throws IOException {
-        String source = Files.readString(JOURNAL);
-        assertTrue(source.contains("No active quests"));
-        assertTrue(source.contains("No eligible quests"));
-        assertTrue(source.contains("No tracked quest"));
-        assertTrue(source.contains("No completed quests yet"));
-    }
-
-    @Test
-    void sharedControlBarUsesFinalPlexonSlotGeometry() throws IOException {
-        String source = Files.readString(JOURNAL);
-        assertTrue(source.contains("item(holder, 45, Material.ARROW"));
-        assertTrue(source.contains("item(holder, 48, Material.ARROW"));
-        assertTrue(source.contains("item(holder, 49, Material.MAP"));
-        assertTrue(source.contains("item(holder, 50, Material.ARROW"));
-        assertTrue(source.contains("item(holder, 53, Material.EMERALD"));
-        assertTrue(source.contains("openContext(p, parent)"));
-    }
-
-    @Test
-    void sectionIdentityUsesReservedHeaderSlot() throws IOException {
-        String source = Files.readString(JOURNAL);
-        assertTrue(source.contains("item(holder, 4, sectionMaterial(selected)"));
-        assertTrue(source.contains("sectionLabel(selected)"));
-    }
-
-    @Test
-    void staleAndDuplicateActionProtectionArePresent() throws IOException {
-        String source = Files.readString(JOURNAL);
-        assertTrue(source.contains("This quest changed while the menu was open"));
-        assertTrue(source.contains("holder.submit(\"claim\")"));
-        assertTrue(source.contains("holder.submit(submission)"));
-        assertTrue(source.contains("holder.release(submission)"));
-        assertTrue(source.contains("holder.submit(\"prepare-reroll\")"));
-        assertTrue(source.contains("holder.submit(\"reroll\")"));
-    }
-
-    @Test
-    void rapidClicksAreDebouncedAndTrackingRefreshesInPlace() throws IOException {
-        String source = Files.readString(JOURNAL);
-        assertTrue(source.contains("CLICK_DEBOUNCE_NANOS"));
-        assertTrue(source.contains("holder.acceptInteraction()"));
-        assertTrue(source.contains("refreshTrackingPresentation(player, holder, live, parent)"));
-
-        int start = source.indexOf("private void toggleTracked(");
-        int end = source.indexOf("private void runNextAction", start);
-        assertTrue(start >= 0 && end > start);
-        String toggle = source.substring(start, end);
-        assertFalse(toggle.contains("openDetailsById"));
-    }
-
-    @Test
-    void asyncHistoryValidatesExactOpenHolderBeforeRendering() throws IOException {
-        String source = Files.readString(JOURNAL);
-        assertTrue(source.contains("storage.history(player.getUniqueId(), pageSize + 1"));
         assertTrue(source.contains("player.getOpenInventory().getTopInventory().getHolder() != holder"));
+        assertTrue(source.contains("storage.history(player.getUniqueId(), pageSize + 1"));
         assertTrue(source.contains("Bukkit.getScheduler().runTask(plugin"));
     }
 
     @Test
-    void prerequisiteIdsResolveToPlayerFacingNames() throws IOException {
+    void joinAndAbandonHaveDuplicateSubmissionGuards() throws IOException {
         String source = Files.readString(JOURNAL);
-        assertTrue(source.contains("questName(first)"));
-        assertTrue(source.contains("questName(questId)"));
-        assertFalse(source.contains("Quest ID"));
+        assertTrue(source.contains("holder.submit(\"join\")"));
+        assertTrue(source.contains("holder.submit(\"abandon\")"));
+        assertTrue(source.contains("holder.submit(\"claim\")"));
+        assertTrue(source.contains("CLICK_DEBOUNCE_NANOS"));
     }
 
     @Test
-    void directRerollCommandUsesUnifiedJournalInsteadOfLegacyMenu() throws IOException {
+    void exactHolderDeferredClickContractRemainsInUse() throws IOException {
+        String source = Files.readString(JOURNAL);
+        assertTrue(source.contains("MenuInteractionRouter.supportsAction(event.getClick())"));
+        assertTrue(source.contains("MenuInteractionRouter.defer(plugin, player, holder"));
+        assertTrue(source.contains("onDrag(InventoryDragEvent event)"));
+    }
+
+    @Test
+    void realPlayerHeadAndSkillsSurfaceArePresent() throws IOException {
+        String source = Files.readString(JOURNAL);
+        assertTrue(source.contains("items.playerHead(player"));
+        assertTrue(source.contains("openStatistics(Player player)"));
+        assertTrue(source.contains("Skill profile loading..."));
+        assertTrue(source.contains("Skills unavailable"));
+    }
+
+    @Test
+    void currentAvailableCompletedAndLegacyOverflowStatesAreExplicit() throws IOException {
+        String source = Files.readString(JOURNAL);
+        assertTrue(source.contains("No quest joined"));
+        assertTrue(source.contains("Available Quests"));
+        assertTrue(source.contains("No completed quests yet"));
+        assertTrue(source.contains("Legacy active quests"));
+        assertTrue(source.contains("Join Quest"));
+        assertTrue(source.contains("Abandon Quest"));
+    }
+
+    @Test
+    void rotationNoLongerAutoCreatesNormalAssignments() throws IOException {
+        String source = Files.readString(ROTATION);
+        assertFalse(source.contains("assignments.add(player, profile"));
+        assertTrue(source.contains("profile.expirePast"));
+        assertTrue(source.contains("progress.reindex(profile)"));
+    }
+
+    @Test
+    void participationOwnsLiveValidationAndAsyncInsert() throws IOException {
+        String source = Files.readString(PARTICIPATION);
+        assertTrue(source.contains("inFlight.add(player.getUniqueId())"));
+        assertTrue(source.contains("storage.questIdsForPeriod"));
+        assertTrue(source.contains("assignments.add(player, liveProfile"));
+        assertTrue(source.contains("profile.activeAssignments().size()"));
+        assertTrue(source.contains("progress.reindex(liveProfile)"));
+    }
+
+    @Test
+    void rerollCommandExplainsBoardInsteadOfMutatingAssignments() throws IOException {
         String source = Files.readString(COMMAND);
-        assertTrue(source.contains("journal.openReroll(player, assignment)"));
-        assertFalse(source.contains("menus.openReroll"));
-        assertFalse(source.contains("MenuContext.journal"));
+        assertTrue(source.contains("Rerolls are no longer needed"));
+        assertTrue(source.contains("journal.openAvailable(player, 0, null)"));
+        assertFalse(source.contains("journal.openReroll(player, assignment)"));
     }
 
     @Test
-    void journalRendersTrustedMiniMessageAndSharedProgressMarkup() throws IOException {
+    void playerFacingJournalDoesNotExposeRawQuestIds() throws IOException {
         String source = Files.readString(JOURNAL);
-        assertTrue(source.contains("text.progressBarMarkup(progress.percentage())"));
-        assertTrue(source.contains("text.progressBarMarkup(total.percentage())"));
-        assertFalse(source.contains("progress.bar()"));
-        assertFalse(source.contains("total.bar()"));
-        assertFalse(source.contains("safe(reward.display())"));
-        assertFalse(source.contains("safe(rewardSummary("));
-        assertTrue(source.contains("reward.display()"));
+        assertFalse(source.contains("Quest ID"));
+        assertTrue(source.contains("questName(questId)"));
     }
 }
