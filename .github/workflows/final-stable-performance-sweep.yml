@@ -1,0 +1,413 @@
+name: Final 4.1 stable performance sweep
+
+on:
+  push:
+    branches: [revamp/4.1.0-full-standard]
+    paths: ['.github/workflows/final-stable-performance-sweep.yml']
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: revamp/4.1.0-full-standard
+          fetch-depth: 0
+
+      - name: Apply stable hot-path and release sweep
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected one marker, found {count}')
+              p.write_text(text.replace(old, new, 1))
+
+          # Global objective-interest gate: one cheap server-wide check before common Bukkit events
+          # touch player/entity/inventory context. Per-player indexes remain authoritative afterward.
+          path = 'src/main/java/com/zpkdxgames/plexonquests/service/ProgressService.java'
+          old = '''    public boolean interested(Player player, ObjectiveType type) {
+              PlayerObjectiveIndex index = indexes.get(player.getUniqueId());
+              return index != null && index.interested(type);
+          }
+
+          /** Cheap material-aware interest gate backed by the player's candidate index. */'''
+          new = '''    public boolean interested(Player player, ObjectiveType type) {
+              PlayerObjectiveIndex index = indexes.get(player.getUniqueId());
+              return index != null && index.interested(type);
+          }
+
+          /**
+           * Allocation-free server-wide type gate for very common Bukkit events. This is only a
+           * coarse rejection check; the per-player/material/entity index remains authoritative.
+           */
+          public boolean anyInterested(ObjectiveType type) {
+              Set<UUID> players = interestedPlayers.get(type);
+              return players != null && !players.isEmpty();
+          }
+
+          /** Cheap material-aware interest gate backed by the player's candidate index. */'''
+          replace_once(path, old, new)
+
+          # Hot listener gates. Avoid entity/projectile/inventory/recipe inspection when no online
+          # profile can consume that objective type at all.
+          path = 'src/main/java/com/zpkdxgames/plexonquests/objective/tracker/CoreObjectiveListener.java'
+          replacements = [
+              ('''    public void onPlace(BlockPlaceEvent event) {
+                  blockProcessor.placeBlock(event.getPlayer(), event.getBlockPlaced().getType());
+              }''', '''    public void onPlace(BlockPlaceEvent event) {
+                  if (!progress.anyInterested(ObjectiveType.PLACE_BLOCK)) {
+                      return;
+                  }
+                  blockProcessor.placeBlock(event.getPlayer(), event.getBlockPlaced().getType());
+              }'''),
+              ('''    public void onDeath(EntityDeathEvent event) {
+                  Player killer = event.getEntity().getKiller();''', '''    public void onDeath(EntityDeathEvent event) {
+                  if (!progress.anyInterested(ObjectiveType.KILL_ENTITY)) {
+                      return;
+                  }
+                  Player killer = event.getEntity().getKiller();'''),
+              ('''    public void onDamage(EntityDamageByEntityEvent event) {
+                  Player player = damagingPlayer(event);''', '''    public void onDamage(EntityDamageByEntityEvent event) {
+                  if (!progress.anyInterested(ObjectiveType.DAMAGE_ENTITY)) {
+                      return;
+                  }
+                  Player player = damagingPlayer(event);'''),
+              ('''    public void onFish(PlayerFishEvent event) {
+                  if (event.getState() != PlayerFishEvent.State.CAUGHT_FISH || event.getCaught() == null) {''', '''    public void onFish(PlayerFishEvent event) {
+                  if (!progress.anyInterested(ObjectiveType.CATCH_FISH)) {
+                      return;
+                  }
+                  if (event.getState() != PlayerFishEvent.State.CAUGHT_FISH || event.getCaught() == null) {'''),
+              ('''    public void onCraft(CraftItemEvent event) {
+                  if (!(event.getWhoClicked() instanceof Player player) || event.getRecipe() == null) {''', '''    public void onCraft(CraftItemEvent event) {
+                  if (!progress.anyInterested(ObjectiveType.CRAFT_ITEM)) {
+                      return;
+                  }
+                  if (!(event.getWhoClicked() instanceof Player player) || event.getRecipe() == null) {'''),
+              ('''    public void onFurnaceExtract(FurnaceExtractEvent event) {
+                  Player player = event.getPlayer();''', '''    public void onFurnaceExtract(FurnaceExtractEvent event) {
+                  if (!progress.anyInterested(ObjectiveType.SMELT_ITEM)) {
+                      return;
+                  }
+                  Player player = event.getPlayer();'''),
+              ('''    public void onEnchant(EnchantItemEvent event) {
+                  Player player = event.getEnchanter();''', '''    public void onEnchant(EnchantItemEvent event) {
+                  if (!progress.anyInterested(ObjectiveType.ENCHANT_ITEM)) {
+                      return;
+                  }
+                  Player player = event.getEnchanter();'''),
+              ('''    public void onBrewingExtract(InventoryClickEvent event) {
+                  if (!(event.getWhoClicked() instanceof Player player)''', '''    public void onBrewingExtract(InventoryClickEvent event) {
+                  if (!progress.anyInterested(ObjectiveType.BREW_POTION)) {
+                      return;
+                  }
+                  if (!(event.getWhoClicked() instanceof Player player)'''),
+              ('''    public void onWorldChange(PlayerChangedWorldEvent event) {
+                  Player player = event.getPlayer();''', '''    public void onWorldChange(PlayerChangedWorldEvent event) {
+                  if (!progress.anyInterested(ObjectiveType.VISIT_WORLD)) {
+                      return;
+                  }
+                  Player player = event.getPlayer();'''),
+              ('''    public void onAdvancement(PlayerAdvancementDoneEvent event) {
+                  Player player = event.getPlayer();''', '''    public void onAdvancement(PlayerAdvancementDoneEvent event) {
+                  if (!progress.anyInterested(ObjectiveType.COMPLETE_ADVANCEMENT)) {
+                      return;
+                  }
+                  Player player = event.getPlayer();''')
+          ]
+          for old, new in replacements:
+              replace_once(path, old, new)
+
+          # Sampler: stationary players and teleport/outlier deltas no longer pay Math.sqrt.
+          path = 'src/main/java/com/zpkdxgames/plexonquests/objective/tracker/ActivitySampler.java'
+          replace_once(path,
+              '''        double maximumDelta = settings.travelMaximumDelta();
+                  long afkNanos = settings.afkTimeout().toNanos();''',
+              '''        double maximumDelta = settings.travelMaximumDelta();
+                  double maximumDeltaSquared = maximumDelta * maximumDelta;
+                  long afkNanos = settings.afkTimeout().toNanos();''')
+          text = Path(path).read_text()
+          text = text.replace('now, generation, maximumDelta, afkNanos, intervalTicks);',
+                              'now, generation, maximumDeltaSquared, afkNanos, intervalTicks);')
+          if text.count('maximumDeltaSquared, afkNanos, intervalTicks);') != 2:
+              raise SystemExit('ActivitySampler: expected two sampling calls')
+          Path(path).write_text(text)
+          replace_once(path,
+              '''            long generation,
+                  double maximumDelta,
+                  long afkNanos,''',
+              '''            long generation,
+                  double maximumDeltaSquared,
+                  long afkNanos,''')
+          replace_once(path,
+              '''        double deltaSquared = distanceSquared(sample, current);
+                  double delta = Math.sqrt(deltaSquared);
+                  if (delta > 0.05D && delta <= maximumDelta) {
+                      sample.lastActivityNanos = now;
+                      if (travelInterested) {
+                          sample.fractionalDistance += delta;
+                          long wholeBlocks = (long) sample.fractionalDistance;
+                          if (wholeBlocks > 0L) {
+                              sample.fractionalDistance -= wholeBlocks;
+                              progress.contribute(player, movementContribution(
+                                      ObjectiveType.TRAVEL_DISTANCE, wholeBlocks, player, movementType(player), false));
+                          }
+                      }
+                  }
+
+                  if (playTimeInterested && now - sample.lastActivityNanos <= afkNanos) {
+                      sample.fractionalSeconds += intervalTicks / 20D;
+                      long seconds = (long) sample.fractionalSeconds;
+                      if (seconds > 0L) {
+                          sample.fractionalSeconds -= seconds;
+                          progress.contribute(player, movementContribution(
+                                  ObjectiveType.PLAY_TIME, seconds, player, movementType(player), false));
+                      }
+                  }''',
+              '''        double deltaSquared = distanceSquared(sample, current);
+                  String movement = null;
+                  if (deltaSquared > 0.0025D && deltaSquared <= maximumDeltaSquared) {
+                      double delta = Math.sqrt(deltaSquared);
+                      sample.lastActivityNanos = now;
+                      if (travelInterested) {
+                          sample.fractionalDistance += delta;
+                          long wholeBlocks = (long) sample.fractionalDistance;
+                          if (wholeBlocks > 0L) {
+                              sample.fractionalDistance -= wholeBlocks;
+                              movement = movementType(player);
+                              progress.contribute(player, movementContribution(
+                                      ObjectiveType.TRAVEL_DISTANCE, wholeBlocks, player, movement, false));
+                          }
+                      }
+                  }
+
+                  if (playTimeInterested && now - sample.lastActivityNanos <= afkNanos) {
+                      sample.fractionalSeconds += intervalTicks / 20D;
+                      long seconds = (long) sample.fractionalSeconds;
+                      if (seconds > 0L) {
+                          sample.fractionalSeconds -= seconds;
+                          if (movement == null) {
+                              movement = movementType(player);
+                          }
+                          progress.contribute(player, movementContribution(
+                                  ObjectiveType.PLAY_TIME, seconds, player, movement, false));
+                      }
+                  }''')
+
+          # Compatibility menu listener is main-thread confined: avoid CHM and redundant unsafe set.
+          path = 'src/main/java/com/zpkdxgames/plexonquests/gui/MenuListener.java'
+          p = Path(path)
+          text = p.read_text()
+          text = text.replace('import java.util.EnumSet;\n', '')
+          text = text.replace('import java.util.concurrent.ConcurrentHashMap;\n', 'import java.util.HashMap;\n')
+          old = '''    private static final EnumSet<ClickType> UNSAFE = EnumSet.of(
+                  ClickType.NUMBER_KEY,
+                  ClickType.SWAP_OFFHAND,
+                  ClickType.DROP,
+                  ClickType.CONTROL_DROP,
+                  ClickType.DOUBLE_CLICK,
+                  ClickType.MIDDLE,
+                  ClickType.CREATIVE);
+
+          '''
+          if text.count(old) != 1:
+              raise SystemExit('MenuListener: unsafe set marker mismatch')
+          text = text.replace(old, '', 1)
+          text = text.replace('private final Map<UUID, Long> lastClick = new ConcurrentHashMap<>();',
+                              'private final Map<UUID, Long> lastClick = new HashMap<>();')
+          text = text.replace('                || UNSAFE.contains(event.getClick())\n', '')
+          p.write_text(text)
+
+          # GUI construction avoids stream/lambda churn when converting lore lines.
+          path = 'src/main/java/com/zpkdxgames/plexonquests/gui/Phase2JournalService.java'
+          replace_once(path,
+              '''    private List<Component> components(List<String> lines) {
+                  return lines.stream().map(line -> line == null || line.isBlank() ? Component.empty() : text.parse(line)).toList();
+              }''',
+              '''    private List<Component> components(List<String> lines) {
+                  if (lines.isEmpty()) {
+                      return List.of();
+                  }
+                  List<Component> components = new ArrayList<>(lines.size());
+                  for (String line : lines) {
+                      components.add(line == null || line.isBlank() ? Component.empty() : text.parse(line));
+                  }
+                  return List.copyOf(components);
+              }''')
+
+          # Lock global-gate lifecycle semantics into the existing interest-index regression test.
+          path = 'src/test/java/com/zpkdxgames/plexonquests/service/ProgressServiceInterestTest.java'
+          replace_once(path,
+              '''        assertTrue(contains(harness.service().interestedPlayerIds(ObjectiveType.TRAVEL_DISTANCE), playerId));
+                  assertFalse(contains(harness.service().interestedPlayerIds(ObjectiveType.PLAY_TIME), playerId));
+
+                  harness.service().removeIndex(playerId);
+
+                  assertFalse(contains(harness.service().interestedPlayerIds(ObjectiveType.TRAVEL_DISTANCE), playerId));''',
+              '''        assertTrue(contains(harness.service().interestedPlayerIds(ObjectiveType.TRAVEL_DISTANCE), playerId));
+                  assertFalse(contains(harness.service().interestedPlayerIds(ObjectiveType.PLAY_TIME), playerId));
+                  assertTrue(harness.service().anyInterested(ObjectiveType.TRAVEL_DISTANCE));
+                  assertFalse(harness.service().anyInterested(ObjectiveType.PLAY_TIME));
+
+                  harness.service().removeIndex(playerId);
+
+                  assertFalse(contains(harness.service().interestedPlayerIds(ObjectiveType.TRAVEL_DISTANCE), playerId));
+                  assertFalse(harness.service().anyInterested(ObjectiveType.TRAVEL_DISTANCE));''')
+
+          # Keep the detailed per-player listener tests meaningful after adding the coarse global gate.
+          path = 'src/test/java/com/zpkdxgames/plexonquests/objective/tracker/CoreObjectiveListenerTest.java'
+          p = Path(path)
+          text = p.read_text()
+          text = text.replace('''        when(progress.interested(player, ObjectiveType.CRAFT_ITEM, Material.DIAMOND)).thenReturn(false);''',
+                              '''        when(progress.anyInterested(ObjectiveType.CRAFT_ITEM)).thenReturn(true);
+                  when(progress.interested(player, ObjectiveType.CRAFT_ITEM, Material.DIAMOND)).thenReturn(false);''')
+          text = text.replace('''        when(progress.interested(player, ObjectiveType.BREW_POTION)).thenReturn(false);''',
+                              '''        when(progress.anyInterested(ObjectiveType.BREW_POTION)).thenReturn(true);
+                  when(progress.interested(player, ObjectiveType.BREW_POTION)).thenReturn(false);''')
+          text = text.replace('''        when(progress.interested(killer, ObjectiveType.KILL_ENTITY, EntityType.ZOMBIE)).thenReturn(false);''',
+                              '''        when(progress.anyInterested(ObjectiveType.KILL_ENTITY)).thenReturn(true);
+                  when(progress.interested(killer, ObjectiveType.KILL_ENTITY, EntityType.ZOMBIE)).thenReturn(false);''')
+          p.write_text(text)
+
+          # Stable product identity. No SNAPSHOT/RC suffix remains in the final source product.
+          path = 'pom.xml'
+          replace_once(path, '<version>4.1.0-rc.1</version>', '<version>4.1.0</version>')
+          replace_once(path,
+              '<project.build.outputTimestamp>2026-09-10T00:00:00Z</project.build.outputTimestamp>',
+              '<project.build.outputTimestamp>2026-09-12T00:00:00Z</project.build.outputTimestamp>')
+
+          # Stable changelog entry.
+          path = 'CHANGELOG.md'
+          replace_once(path, '''## [Unreleased]
+
+          ## [4.0.0] - Stable''', '''## [Unreleased]
+
+          ## [4.1.0] - 2026-09-12
+
+          - Promotes the full-source 4.1 revamp directly to the stable product line on Java 25 / Paper 26.2 / PlexonCore 2.0.4.
+          - Adds a server-wide objective-type interest gate ahead of common combat, crafting, fishing, brewing, smelting, enchanting, world-change, advancement, and block-place listeners; irrelevant events exit before detailed player/entity/inventory work.
+          - Preserves per-player material/entity candidate indexes, lazy origin/maturity/spawn-reason context, direct in-memory main-thread progression, coalesced dirty assignment snapshots, and the bounded single-writer SQLite/WAL model.
+          - Reduces travel/play-time sampler CPU by avoiding square-root work for stationary and rejected outlier movement, and reuses one movement classification when both sampled objective types progress together.
+          - Removes unnecessary concurrent-map and redundant click-type overhead from the compatibility GUI listener while preserving main-thread confinement, cancellation, debounce, exact-holder validation, and next-tick inventory transitions.
+          - Fixes configured MiniMessage presentation across journal rewards, objectives, descriptions, history, rarity, and completion feedback so formatting tags are rendered rather than exposed literally.
+          - Uses the shared configurable journal progress renderer and guarantees visible non-zero progress below one full segment while preserving exact 0% and 100% states.
+          - Aligns compatibility quest-card actions with the hardened left/right-only GUI contract and removes the unreachable shift-reroll hint; rerolls remain available from quest details.
+          - Keeps the mature quest, reward, reroll, provenance, rotation, prerequisite, integration, persistence, public API, and transaction authorities unchanged where the full audit found no demonstrated defect.
+          - Stable rollback baseline is `v4.0.0` at `57a235460e5e936ca931ee8d0e96b0a424f134f8`.
+
+          ## [4.0.0] - Stable''')
+
+          # README now describes the final stable product, not the preceding RC/stable baseline.
+          path = 'README.md'
+          p = Path(path)
+          text = p.read_text()
+          text = text.replace(
+              'PlexonQuests **4.0.0** is the stable premium quest-journal line for Paper 26.2. It preserves the mature objective, persistence, PlexonCore provenance, rotation and reward-transaction engines while adding prerequisite-aware discovery, derived journal states, tracked-quest terminology, richer immutable API views and the final Phase 3 premium journal UX.',
+              'PlexonQuests **4.1.0** is the stable Paper 26.2 quest platform. It keeps the mature objective, persistence, PlexonCore provenance, rotation and reward-transaction engines while hardening GUI interaction safety, MiniMessage presentation, progress readability, and high-concurrency listener hot paths.')
+          text = text.replace('Back up `plugins/PlexonQuests/` before the first 4.0 startup.',
+                              'Back up `plugins/PlexonQuests/` before upgrading to 4.1.')
+          text = text.replace('Install `PlexonQuests-4.0.0.jar` from the stable GitHub release.',
+                              'Install `PlexonQuests-4.1.0.jar` from the stable GitHub release.')
+          text = text.replace('Keep the existing 3.3.1 data directory; 4.0 preserves SQLite assignments, frozen definition snapshots, claim identities, preferences and history tables.',
+                              'Keep the existing PlexonQuests data directory; 4.1 introduces no storage/schema migration and preserves assignments, frozen definition snapshots, claim identities, preferences and history.')
+          text = text.replace('Perform the operational checks in `docs/RUNTIME_CERTIFICATION_4.0.0.md` before production cutover/soak sign-off where required.',
+                              'Use `docs/PERFORMANCE.md` for production profiling and concurrency acceptance on the target Paper host.')
+          text = text.replace('The final RC3 54-slot control geometry is:', 'The stable 4.1 journal control geometry is:')
+          text = text.replace('- final RC3, accepted Phase 3 and performance ancestry;',
+                              '- stable 4.1 source lineage plus accepted Phase 3 and performance ancestry;')
+          text = text.replace('Live PlexonCraft runtime certification and soak remain deployment follow-ups and may be recorded as `NOT_EXECUTED` in GitHub release provenance. Rollback baseline: `v3.3.1` at `b74fc212d5aea41a0e01e9bc1bf5c5382302d014`.',
+                              'Live host profiling remains environment-specific and must be measured rather than inferred from unit tests. Stable rollback baseline: `v4.0.0` at `57a235460e5e936ca931ee8d0e96b0a424f134f8`.')
+          docs_marker = '- [3.3.1 -> 4.0 migration and rollback](docs/MIGRATION_3.3.1_TO_4.0.0.md)\n'
+          if docs_marker in text and 'FULL_REVAMP_AUDIT_4.1.0.md' not in text:
+              text = text.replace(docs_marker, '- [4.1 full-revamp audit](docs/FULL_REVAMP_AUDIT_4.1.0.md)\n' + docs_marker, 1)
+          p.write_text(text)
+
+          # Performance documentation records the final hot-path rules without inventing live numbers.
+          path = 'docs/PERFORMANCE.md'
+          replace_once(path,
+              '''- Gameplay events inspect only matching buckets; they do not scan the full quest registry.
+          - Progress mutation is in memory on the primary thread and records one compact dirty snapshot per assignment.''',
+              '''- Gameplay events inspect only matching buckets; they do not scan the full quest registry.
+          - Common high-frequency listeners first use a server-wide objective-type interest gate, then the existing per-player/material/entity index; when nobody online can consume an event type, detailed entity, recipe, inventory, and contribution work is skipped.
+          - Travel/play-time sampling skips square-root calculation for stationary/rejected deltas and classifies movement at most once when both sampled objective types progress in the same pass.
+          - Custom inventory listeners reject non-owned inventories immediately; accepted semantic actions remain ordinary left/right clicks only and inventory transitions are deferred to the next primary-thread task with exact-holder validation.
+          - Progress mutation is in memory on the primary thread and records one compact dirty snapshot per assignment.''')
+
+          # Final stable release notes consumed by the guarded stable publisher.
+          notes = Path('.release/RELEASE_NOTES_4.1.0.md')
+          notes.parent.mkdir(parents=True, exist_ok=True)
+          notes.write_text('''# PlexonQuests 4.1.0
+
+          PlexonQuests 4.1.0 is the final stable full-revamp release for Paper 26.2 and Java 25.
+
+          ## Player experience
+
+          - Corrects MiniMessage rendering across quest rewards, objectives, descriptions, history, rarity labels, and objective-completion feedback.
+          - Uses the shared configurable progress renderer throughout the journal; low non-zero progress is now visibly represented instead of looking empty.
+          - Keeps the premium journal navigation and state model while hardening every inventory transition behind next-tick, exact-holder validation.
+          - Removes the unreachable shift-left reroll hint from compatibility cards; rerolls remain available from Quest Details.
+
+          ## High-concurrency runtime
+
+          - Adds a coarse global interest gate before common gameplay listeners, followed by the existing per-player material/entity candidate index.
+          - Avoids detailed entity, projectile, recipe, inventory, and contribution work when no online quest can consume that event type.
+          - Keeps block-origin bookkeeping correct and bounded; block-break provenance is deliberately not skipped when objective interest is empty.
+          - Reduces travel/play-time sampler CPU for idle and rejected movement and avoids duplicate movement classification in a sampling pass.
+          - Keeps ordinary progress mutation in memory on the primary thread while SQLite writes remain coalesced on the bounded single-writer WAL queue.
+          - Removes unnecessary concurrent-map overhead from the main-thread compatibility GUI click debounce path.
+
+          ## Compatibility and safety
+
+          - No storage/schema migration.
+          - No quest/reward economy rebalance.
+          - No public API or command removal.
+          - Paper API: 26.2.
+          - PlexonCore: 2.0.4.
+          - Rollback: `v4.0.0` (`57a235460e5e936ca931ee8d0e96b0a424f134f8`).
+
+          The release pipeline rebuilds and tests exact stable `main`, validates the installable JAR and dependency boundaries, publishes checksum/test/provenance evidence, then downloads and verifies the published assets again. Live MSPT is host-dependent and is intentionally measured on the target server rather than fabricated from unit tests.
+          '''.replace('\n          ', '\n'))
+
+          # Stable source should not carry an RC-specific release-notes file as its current product metadata.
+          rc_notes = Path('.release/RELEASE_NOTES_4.1.0-rc.1.md')
+          if rc_notes.exists():
+              rc_notes.unlink()
+
+          # Final product tree must contain no snapshot/prerelease version identity.
+          pom = Path('pom.xml').read_text()
+          if '<version>4.1.0</version>' not in pom or '4.1.0-rc.1' in pom or '4.1.0-SNAPSHOT' in pom:
+              raise SystemExit('Stable Maven identity check failed')
+
+          # Ensure every replacement is syntactically clean before committing.
+          PY
+          git diff --check
+
+      - name: Commit final stable source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/final-stable-performance-sweep.yml
+          git config user.name 'Tonim'
+          git config user.email '99552287+ZpkDxGames@users.noreply.github.com'
+          git add pom.xml CHANGELOG.md README.md docs/PERFORMANCE.md \
+            .release/RELEASE_NOTES_4.1.0.md .release/RELEASE_NOTES_4.1.0-rc.1.md \
+            src/main/java/com/zpkdxgames/plexonquests/service/ProgressService.java \
+            src/main/java/com/zpkdxgames/plexonquests/objective/tracker/CoreObjectiveListener.java \
+            src/main/java/com/zpkdxgames/plexonquests/objective/tracker/ActivitySampler.java \
+            src/main/java/com/zpkdxgames/plexonquests/gui/MenuListener.java \
+            src/main/java/com/zpkdxgames/plexonquests/gui/Phase2JournalService.java \
+            src/test/java/com/zpkdxgames/plexonquests/service/ProgressServiceInterestTest.java \
+            src/test/java/com/zpkdxgames/plexonquests/objective/tracker/CoreObjectiveListenerTest.java
+          git diff --cached --check
+          git commit -m 'Finalize PlexonQuests 4.1.0 stable performance and GUI'
+          git push origin HEAD:revamp/4.1.0-full-standard
