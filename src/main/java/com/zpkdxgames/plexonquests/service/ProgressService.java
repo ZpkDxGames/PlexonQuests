@@ -83,6 +83,15 @@ public final class ProgressService {
         return index != null && index.interested(type);
     }
 
+    /**
+ * Allocation-free server-wide type gate for common Bukkit events. This is a coarse
+ * rejection check only; the existing per-player candidate index remains authoritative.
+ */
+public boolean anyInterested(ObjectiveType type) {
+    Set<UUID> players = interestedPlayers.get(type);
+    return players != null && !players.isEmpty();
+}
+
     /** Cheap material-aware interest gate backed by the player's candidate index. */
     public boolean interested(Player player, ObjectiveType type, Material material) {
         PlayerObjectiveIndex index = indexes.get(player.getUniqueId());

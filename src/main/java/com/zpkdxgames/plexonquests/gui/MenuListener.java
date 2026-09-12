@@ -1,10 +1,9 @@
 package com.zpkdxgames.plexonquests.gui;
 
 import com.zpkdxgames.plexonquests.config.ConfigManager;
-import java.util.EnumSet;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.HashMap;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -16,18 +15,9 @@ import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 
 public final class MenuListener implements Listener {
-    private static final EnumSet<ClickType> UNSAFE = EnumSet.of(
-            ClickType.NUMBER_KEY,
-            ClickType.SWAP_OFFHAND,
-            ClickType.DROP,
-            ClickType.CONTROL_DROP,
-            ClickType.DOUBLE_CLICK,
-            ClickType.MIDDLE,
-            ClickType.CREATIVE);
-
     private final JavaPlugin plugin;
     private final ConfigManager configs;
-    private final Map<UUID, Long> lastClick = new ConcurrentHashMap<>();
+    private final Map<UUID, Long> lastClick = new HashMap<>();
 
     public MenuListener(JavaPlugin plugin, ConfigManager configs) {
         this.plugin = plugin;
@@ -42,7 +32,6 @@ public final class MenuListener implements Listener {
         event.setCancelled(true);
         if (!(event.getWhoClicked() instanceof Player player)
                 || !holder.viewerId().equals(player.getUniqueId())
-                || UNSAFE.contains(event.getClick())
                 || !MenuInteractionRouter.supportsAction(event.getClick())
                 || event.getRawSlot() < 0
                 || event.getRawSlot() >= event.getView().getTopInventory().getSize()) {

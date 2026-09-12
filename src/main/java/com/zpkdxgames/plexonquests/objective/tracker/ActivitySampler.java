@@ -64,6 +64,7 @@ public final class ActivitySampler implements Listener, AutoCloseable {
         long generation = ++sampleGeneration;
         var settings = configs.snapshot().settings().tracking();
         double maximumDelta = settings.travelMaximumDelta();
+        double maximumDeltaSquared = maximumDelta * maximumDelta;
         long afkNanos = settings.afkTimeout().toNanos();
         long intervalTicks = settings.travelSampleTicks();
 
@@ -73,7 +74,7 @@ public final class ActivitySampler implements Listener, AutoCloseable {
                 continue;
             }
             boolean playTime = progress.interested(player, ObjectiveType.PLAY_TIME);
-            samplePlayer(player, true, playTime, now, generation, maximumDelta, afkNanos, intervalTicks);
+            samplePlayer(player, true, playTime, now, generation, maximumDeltaSquared, afkNanos, intervalTicks);
         }
 
         for (UUID playerId : progress.interestedPlayerIds(ObjectiveType.PLAY_TIME)) {
@@ -85,7 +86,7 @@ public final class ActivitySampler implements Listener, AutoCloseable {
             if (player == null || !player.isOnline()) {
                 continue;
             }
-            samplePlayer(player, false, true, now, generation, maximumDelta, afkNanos, intervalTicks);
+            samplePlayer(player, false, true, now, generation, maximumDeltaSquared, afkNanos, intervalTicks);
         }
 
         samples.entrySet().removeIf(entry -> entry.getValue().generation != generation);
@@ -97,7 +98,7 @@ public final class ActivitySampler implements Listener, AutoCloseable {
             boolean playTimeInterested,
             long now,
             long generation,
-            double maximumDelta,
+            double maximumDeltaSquared,
             long afkNanos,
             long intervalTicks) {
         Sample sample = samples.computeIfAbsent(player.getUniqueId(), ignored -> Sample.initial(player));
@@ -109,8 +110,8 @@ public final class ActivitySampler implements Listener, AutoCloseable {
         }
 
         double deltaSquared = distanceSquared(sample, current);
-        double delta = Math.sqrt(deltaSquared);
-        if (delta > 0.05D && delta <= maximumDelta) {
+        if (deltaSquared > 0.0025D && deltaSquared <= maximumDeltaSquared) {
+            double delta = Math.sqrt(deltaSquared);
             sample.lastActivityNanos = now;
             if (travelInterested) {
                 sample.fractionalDistance += delta;
