@@ -1,0 +1,655 @@
+name: Finalize 4.2 Stable Candidate
+
+on:
+  push:
+    branches: [feature/4.2.0-joined-quest-board]
+    paths: [.github/workflows/agent-finalize-4.2.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v5
+        with:
+          ref: feature/4.2.0-joined-quest-board
+          fetch-depth: 0
+
+      - name: Apply final stable-candidate hygiene
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          import re
+          import textwrap
+
+          def read(path):
+              return Path(path).read_text(encoding='utf-8')
+
+          def write(path, value):
+              p = Path(path)
+              p.parent.mkdir(parents=True, exist_ok=True)
+              p.write_text(value.rstrip() + '\n', encoding='utf-8')
+
+          def replace_once(path, old, new):
+              value = read(path)
+              if old not in value:
+                  raise SystemExit(f'missing replacement anchor in {path}: {old!r}')
+              write(path, value.replace(old, new, 1))
+
+          menus_path = Path('src/main/resources/menus.yml')
+          legacy_menu_sha256 = hashlib.sha256(menus_path.read_bytes()).hexdigest()
+
+          # Menu layout 4 and safe migration. Exact bundled v3 is replaced; customized files are backed up
+          # and only have their layout marker advanced, preserving administrator presentation choices.
+          cm_path = Path('src/main/java/com/zpkdxgames/plexonquests/config/ConfigManager.java')
+          cm = cm_path.read_text(encoding='utf-8')
+          cm = cm.replace(
+              'import java.nio.file.StandardCopyOption;\n',
+              'import java.nio.file.StandardCopyOption;\nimport java.security.MessageDigest;\nimport java.security.NoSuchAlgorithmException;\n')
+          cm = cm.replace('import java.util.HashMap;\n', 'import java.util.HashMap;\nimport java.util.HexFormat;\n')
+          cm = cm.replace(
+              '    private static final int CURRENT_MENU_LAYOUT = 3;\n',
+              f'    private static final int CURRENT_MENU_LAYOUT = 4;\n    private static final String BUNDLED_MENU_LAYOUT_3_SHA256 = "{legacy_menu_sha256}";\n')
+          start = cm.index('    private void migrateMenus() throws IOException {')
+          end = cm.index('    private YamlConfiguration loadYaml(', start)
+          migrate = '''    private void migrateMenus() throws IOException {
+              Path menusPath = dataDirectory.resolve("menus.yml");
+              String existing = Files.readString(menusPath, StandardCharsets.UTF_8);
+              YamlConfiguration menus = new YamlConfiguration();
+              try {
+                  menus.loadFromString(existing);
+              } catch (InvalidConfigurationException exception) {
+                  return;
+              }
+              int layout = menus.getInt("layout-version", 1);
+              if (layout >= CURRENT_MENU_LAYOUT) {
+                  return;
+              }
+
+              Path backup = dataDirectory.resolve("backups")
+                      .resolve("menus-v" + layout + "-" + Instant.now().toEpochMilli() + ".yml");
+              Files.copy(menusPath, backup, StandardCopyOption.COPY_ATTRIBUTES);
+
+              boolean exactBundledV3 = layout == 3 && BUNDLED_MENU_LAYOUT_3_SHA256.equals(sha256(existing));
+              if (!exactBundledV3) {
+                  String migrated = existing.replaceFirst(
+                          "(?m)^layout-version\\\\s*:\\s*[0-9]+\\s*$",
+                          "layout-version: " + CURRENT_MENU_LAYOUT);
+                  if (migrated.equals(existing)) {
+                      plugin.getLogger().warning("Could not safely advance customized menus.yml layout marker; previous file saved as "
+                              + backup.getFileName());
+                      return;
+                  }
+                  AtomicFiles.writeUtf8(menusPath, migrated);
+                  plugin.getLogger().info("Preserved customized menus.yml while advancing its layout marker to "
+                          + CURRENT_MENU_LAYOUT + "; previous file saved as " + backup.getFileName());
+                  return;
+              }
+
+              try (InputStream bundled = plugin.getResource("menus.yml")) {
+                  if (bundled == null) {
+                      throw new IOException("Bundled menus.yml is missing");
+                  }
+                  AtomicFiles.writeUtf8(menusPath, new String(bundled.readAllBytes(), StandardCharsets.UTF_8));
+              }
+              plugin.getLogger().info("Upgraded bundled-default menus.yml to layout version " + CURRENT_MENU_LAYOUT
+                      + "; previous layout saved as " + backup.getFileName());
+          }
+
+          private static String sha256(String value) {
+              try {
+                  byte[] digest = MessageDigest.getInstance("SHA-256")
+                          .digest(value.getBytes(StandardCharsets.UTF_8));
+                  return HexFormat.of().formatHex(digest);
+              } catch (NoSuchAlgorithmException exception) {
+                  throw new IllegalStateException("SHA-256 is unavailable", exception);
+              }
+          }
+
+'''
+          cm = cm[:start] + migrate + cm[end:]
+          cm_path.write_text(cm, encoding='utf-8')
+
+          menus = menus_path.read_text(encoding='utf-8')
+          if 'layout-version: 3' not in menus:
+              raise SystemExit('bundled menus.yml is not layout 3 before migration')
+          menus_path.write_text(menus.replace('layout-version: 3', 'layout-version: 4', 1), encoding='utf-8')
+
+          # Honor the configured filler instead of hardcoding a second player-journal theme.
+          journal_path = Path('src/main/java/com/zpkdxgames/plexonquests/gui/Phase2JournalService.java')
+          journal = journal_path.read_text(encoding='utf-8')
+          old_filler = 'ItemStack filler = items.create(Material.BLACK_STAINED_GLASS_PANE, Component.empty(), List.of(), false);'
+          if journal.count(old_filler) != 2:
+              raise SystemExit(f'expected two hardcoded filler sites, found {journal.count(old_filler)}')
+          journal = journal.replace(old_filler, 'ItemStack filler = filler();')
+          anchor = '    private void item(Holder holder, int slot, Material material, String name, List<String> lore, boolean glow, Action action) {'
+          if anchor not in journal:
+              raise SystemExit('journal item helper anchor missing')
+          helper = '''    private ItemStack filler() {
+              String configured = configs.snapshot().menus().string(
+                      "common.filler.material", Material.BLACK_STAINED_GLASS_PANE.name());
+              Material material;
+              try {
+                  material = Material.valueOf(configured.toUpperCase(Locale.ROOT));
+              } catch (IllegalArgumentException exception) {
+                  material = Material.BLACK_STAINED_GLASS_PANE;
+              }
+              return items.create(material, Component.empty(), List.of(), false);
+          }
+
+'''
+          journal = journal.replace(anchor, helper + anchor, 1)
+          journal_path.write_text(journal, encoding='utf-8')
+
+          # Exact 4.1 rollback boundary in both canonical workflows.
+          for workflow in ('.github/workflows/build.yml', '.github/workflows/release.yml'):
+              value = read(workflow)
+              value = value.replace("ROLLBACK_TAG: 'v4.0.0'", "ROLLBACK_TAG: 'v4.1.0'")
+              value = value.replace("ROLLBACK_SHA: '57a235460e5e936ca931ee8d0e96b0a424f134f8'",
+                                    "ROLLBACK_SHA: '3b0082bc181b3765e7cdb2bf4e9ce6c72206b896'")
+              write(workflow, value)
+
+          # Release notes.
+          write('.release/RELEASE_NOTES_4.2.0.md', '''# PlexonQuests 4.2.0
+
+PlexonQuests 4.2.0 changes normal quest participation from automatic assignment to an explicit join-based Quest Board while preserving the 4.1 persistence, reward, objective-index, provenance and transaction architecture.
+
+## Player experience
+
+- `/quests` is now a focused Quest Board with Current, Available, Completed/History, Skills and Help surfaces.
+- Players explicitly choose a Daily, Weekly or eligible Milestone quest.
+- One normal active quest is allowed by default; completed-but-unclaimed quests do not occupy that runtime slot.
+- Daily and Weekly slot settings are retained as period participation budgets.
+- Abandon requires confirmation and consumes the period budget by default.
+- Existing 4.1 multi-active profiles are preserved non-destructively and cannot join another quest until back within the configured active limit.
+- The profile summary uses the player's actual head.
+- PlexonSkills 2.x is optional and appears as read-only progression context when its public API is available; missing or loading skills never disable quests.
+- Reroll commands remain compatibility shims and direct players back to Available Quests instead of creating a second mutation path.
+
+## Runtime and safety
+
+- Normal quests are no longer created automatically by Daily, Weekly or Milestone lifecycle maintenance.
+- The offer catalog is side-effect free and deterministic for a player/period/server seed while retaining weighted pools, category/rarity constraints and recent-history exclusions.
+- `QuestParticipationService` is the single player join/abandon authority and revalidates active limits, period limits, duplicate history, eligibility and stale periods before insertion.
+- Existing per-player objective-interest indexing remains authoritative: no joined quest means no normal objective candidates; one joined quest means only that quest's objectives are indexed.
+- Persistence remains asynchronous and Bukkit/player mutations remain primary-thread authoritative.
+- No per-player, per-quest or GUI redraw scheduler was added.
+- Menu layout 4 uses configured filler material and upgrades the exact bundled layout safely; customized menu files are backed up and preserved.
+
+## Compatibility
+
+- Java 25 / class major 69.
+- Paper 26.2 build 121 stable API.
+- PlexonCore 2.0.4.
+- Existing SQLite assignment/history data and 4.1 frozen snapshots remain compatible.
+- Public/admin assignment, claim, tracking and diagnostic surfaces remain available.
+
+## Verification boundary
+
+The GitHub stable publisher rebuilds and tests exact final `main`, verifies the installable shaded distribution, publishes checksum/test/provenance evidence, then re-downloads and verifies the public assets. Live PlexonCraft/Spark runtime certification is not claimed unless separately executed.
+
+Rollback baseline: `v4.1.0` at `3b0082bc181b3765e7cdb2bf4e9ce6c72206b896`.
+''')
+
+          # Authoritative 4.2 README.
+          write('README.md', '''# PlexonQuests
+
+[![Build](https://github.com/ZpkDxGames/PlexonQuests/actions/workflows/build.yml/badge.svg)](https://github.com/ZpkDxGames/PlexonQuests/actions/workflows/build.yml)
+
+PlexonQuests **4.2.0** is a join-based quest board for Paper 26.2 / Java 25. It keeps the mature 4.1 objective, persistence, reward-transaction, PlexonCore provenance and integration architecture while changing normal participation to explicit player choice.
+
+> PlexonQuests 4.2 no longer automatically starts normal quests. Players choose a quest from `/quests`, and only one normal quest runs at a time by default.
+
+## Requirements
+
+- Paper 26.2
+- Java 25
+- PlexonCore 2.0.4 recommended for shared Core Runtime acquisition/provenance
+- Maven 3.9+ when building from source
+
+SQLite JDBC and relocated FastUtil are bundled. PlaceholderAPI, Vault, LuckPerms, PlexonRanks, PlexonTools, PlexonKeys, PlexonCrates, PlexonShops, PlexonDailyRewards and PlexonSkills are optional/runtime-detected integrations.
+
+## Quest Board
+
+`/quests` opens the normal player surface:
+
+- **Current** — the currently joined quest, progress, objectives, rewards and guarded abandon/claim actions.
+- **Available** — deterministic Daily, Weekly and eligible Milestone offers.
+- **Completed / History** — paginated persisted quest history.
+- **Skills** — optional PlexonSkills level/progress context.
+- **Help** — participation rules and compatibility notes.
+
+The player summary uses the player's actual Minecraft head. Available-quest details show objective/reward context and, when available, a relevant PlexonSkills skill. Skills are informational in 4.2 and are not silently introduced as quest eligibility requirements.
+
+## Participation model
+
+- Normal Daily/Weekly/Milestone quests are not auto-assigned.
+- `participation.maximum-active-quests` defaults to `1`.
+- Completing a quest frees the active runtime slot even when its reward is not claimed yet.
+- Daily/Weekly slot settings remain the source of period participation budgets; they are no longer simultaneous normal-assignment targets.
+- A quest already used in the same rotating period cannot be joined again.
+- Abandon is confirmation-gated and consumes the period budget by default.
+- Existing 4.1 multi-active assignments are preserved. An overflow profile can finish/claim those assignments but cannot add a new normal quest until it is within the current limit.
+- Manual/admin assignments remain supported and continue to use the existing authoritative assignment APIs.
+
+## Runtime model
+
+PlexonQuests still uses shared, interest-gated gameplay listeners. It does **not** create a Bukkit listener per player or per quest.
+
+`no joined quest -> no normal objective candidates`
+
+`one joined quest -> only that quest's normal objective candidates`
+
+Completion, cancellation and expiration reindex the profile and remove inactive objective interest. Travel/play-time sampling continues to iterate only interested players. SQLite writes and catalog/history reads remain asynchronous; inventory and Bukkit mutations remain on the primary thread. No repeating GUI redraw task is used.
+
+## Configuration migration
+
+4.2 keeps config schema version 1 and introduces participation/catalog/skills-display settings. `menus.yml` is layout version 4. The exact bundled 4.1 layout is backed up and replaced by the v4 bundled layout. Customized older menu files are backed up and preserved; only the layout marker is advanced when safe so administrator presentation changes are not blindly overwritten.
+
+See [4.1 -> 4.2 migration](docs/MIGRATION_4.1.0_TO_4.2.0.md) and [configuration](docs/CONFIGURATION.md).
+
+## Commands
+
+Primary player routes are `/quests`, `/quests current`, `/quests available`, `/quests daily`, `/quests weekly`, `/quests milestones`, `/quests completed`, `/quests history`, `/quests skills`, `/quests stats`, and `/quests help`. Tracking commands remain for compatibility. Reroll is retained as a compatibility/deprecation path that redirects players to the board.
+
+See [commands and permissions](docs/COMMANDS.md).
+
+## Build and release verification
+
+```bash
+mvn -B -ntp clean verify
+```
+
+Canonical CI verifies accepted ancestry, Java class major 69, exact Paper/PlexonCore build boundaries, non-empty all-green tests, JAR structure, SQLite/relocated FastUtil inclusion, provided-dependency non-shading, SHA-256, provenance and whitespace.
+
+Stable publication accepts only exact current `main`, rebuilds/tests it, publishes `PlexonQuests-4.2.0.jar` plus `SHA256SUMS.txt`, `TEST_SUMMARY.txt` and `PROVENANCE.txt`, then re-downloads and verifies those public assets. GitHub source/release certification does not imply live PlexonCraft/Spark certification.
+
+Rollback baseline: `v4.1.0` (`3b0082bc181b3765e7cdb2bf4e9ce6c72206b896`).
+
+## Documentation
+
+- [Player UX 4.2](docs/PLAYER_UX_4.2.md)
+- [Commands and permissions](docs/COMMANDS.md)
+- [Configuration](docs/CONFIGURATION.md)
+- [Public API](docs/API.md)
+- [4.1 -> 4.2 migration](docs/MIGRATION_4.1.0_TO_4.2.0.md)
+- [Performance model](docs/PERFORMANCE.md)
+- [Recovery](docs/RECOVERY.md)
+- [Integrations](docs/INTEGRATIONS.md)
+
+PlexonQuests is available under the [MIT License](LICENSE).
+''')
+
+          write('docs/COMMANDS.md', '''# Commands and permissions — PlexonQuests 4.2
+
+`/quest`, `/pquests`, and `/plexonquests` are aliases of `/quests`.
+
+## Player commands
+
+| Command | Permission | Result |
+| --- | --- | --- |
+| `/quests` | `plexonquests.use` | Open the Quest Board home |
+| `/quests current` / `/quests active` | `plexonquests.use` | Open the running quest, or legacy overflow list |
+| `/quests available` | `plexonquests.use` | Browse all current joinable/locked offers |
+| `/quests daily` | `plexonquests.use` | Browse Daily offers |
+| `/quests weekly` | `plexonquests.use` | Browse Weekly offers |
+| `/quests milestones` | `plexonquests.use` | Browse eligible Milestone offers |
+| `/quests completed` / `/quests history` | `plexonquests.history` | Open persisted paginated history |
+| `/quests skills` / `/quests stats` | `plexonquests.use` | Open optional PlexonSkills progression context |
+| `/quests help` | `plexonquests.use` | Explain join, limit, budget and abandon behavior |
+| `/quests track <assignment|quest>` | `plexonquests.pin` | Compatibility tracking for an active quest |
+| `/quests untrack` | `plexonquests.pin` | Clear tracked quest |
+| `/quests reroll` | `plexonquests.reroll` | Compatibility/deprecation path; opens Available Quests |
+
+Joining and abandoning are performed through guarded GUI actions and the same authoritative participation service. There is no separate GUI assignment implementation.
+
+## Administrative commands
+
+The existing 4.1 administrative surface remains available. Destructive targeted mutations (`complete`, `reset`, `cancel`) keep the repeat-to-confirm guard and authoritative state recheck.
+
+| Command | Permission | Result |
+| --- | --- | --- |
+| `/quests admin` | `plexonquests.admin.gui` | Administrator quest browser |
+| `/quests reload` | `plexonquests.admin.reload` | Validate and atomically activate candidate configuration |
+| `/quests validate` | `plexonquests.admin.validate` | Validate active definitions/configuration |
+| `/quests assign <player> <quest>` | `plexonquests.admin.assign` | Assign a MANUAL/admin quest |
+| `/quests cancel <player> <assignment>` | `plexonquests.admin.cancel` | Cancel/archive an assignment |
+| `/quests progress ...` | `plexonquests.admin.progress` | Administrative objective adjustment |
+| `/quests complete <player> <assignment>` | `plexonquests.admin.complete` | Complete an active assignment |
+| `/quests reset <player> <scope|all>` | `plexonquests.admin.reset` | Cancel/reset selected assignments |
+| `/quests rotate ...` | `plexonquests.admin.rotate` | Legacy rotation maintenance; normal 4.2 quests are still joined explicitly |
+| `/quests save` | `plexonquests.admin.save` | Flush dirty progress/checkpoint storage |
+| `/quests backup` | `plexonquests.admin.backup` | Create a consistent SQLite backup |
+| `/quests diagnostics` | `plexonquests.admin.diagnostics` | Runtime, storage, integration and routing diagnostics |
+
+## Limits and bypasses
+
+`plexonquests.bypass.active-limit` bypasses the normal active-quest cap for authorized flows. Existing `plexonquests.bypass.eligibility`, reroll-cost and slot-limit permissions remain for compatibility/admin use. Daily/Weekly numbered slot permissions now influence period participation budget through the existing SlotResolver; they no longer cause multiple normal quests to run simultaneously.
+''')
+
+          config_doc = read('docs/CONFIGURATION.md')
+          header = '''# PlexonQuests 4.2 configuration changes
+
+4.2 keeps `schema-version: 1` and reinterprets the existing Daily/Weekly slot model as **period participation budget** rather than simultaneous normal assignments.
+
+```yaml
+participation:
+  maximum-active-quests: 1
+  allow-abandon: true
+  abandon-consumes-period-budget: true
+  manual-assignments-count-toward-limit: true
+
+catalog:
+  daily-offers: 7
+  weekly-offers: 7
+  refresh-on-period-change: true
+
+skills-display:
+  enabled: true
+  provider: PLEXON_SKILLS
+  category-map:
+    mining: MINING
+    woodcutting: WOODCUTTING
+    excavation: EXCAVATION
+    farming: FARMING
+    fishing: FISHING
+    alchemy: ALCHEMY
+```
+
+`assignments.base-*-slots`, `assignments.maximum-*-slots` and numbered slot permissions are retained and feed Daily/Weekly participation-budget calculation. `participation.maximum-active-quests` controls simultaneously running normal quests and defaults to one. Abandoning consumes the current period's budget by default because the persisted assignment row remains part of period participation history.
+
+`skills-display` is presentation-only in 4.2. Missing/incompatible PlexonSkills must not disable PlexonQuests and skill levels are not automatically added as eligibility gates.
+
+`menus.yml` uses `layout-version: 4`. The player journal now honors `common.filler.material`. On upgrade, exact bundled v3 defaults are backed up and replaced; customized older menu files are backed up and preserved rather than blindly replaced.
+
+---
+
+'''
+          if not config_doc.startswith('# PlexonQuests 4.2 configuration changes'):
+              write('docs/CONFIGURATION.md', header + config_doc)
+
+          api_doc = read('docs/API.md')
+          api_header = '''# PlexonQuests 4.2 API compatibility note
+
+4.2 changes the normal **player UX** from automatic assignment to explicit participation without removing the existing public APIs. Admin/plugin manual assignment remains a distinct compatibility capability and does not become the player Quest Board join path.
+
+The board delegates player join/abandon mutation to the internal authoritative participation service; reward, tracking, assignment, persistence and public immutable journal read contracts remain owned by their existing services. PlexonSkills is consumed only through its optional public API/service boundary and is not exposed as a new mandatory quest eligibility dependency.
+
+Existing consumers should not infer that a Daily/Weekly definition is active merely because it appears in the 4.2 offer catalog. Active assignment state remains the runtime/progress authority.
+
+---
+
+'''
+          if not api_doc.startswith('# PlexonQuests 4.2 API compatibility note'):
+              write('docs/API.md', api_header + api_doc)
+
+          write('docs/PLAYER_UX_4.2.md', '''# PlexonQuests 4.2 player UX
+
+## Goal
+
+4.2 turns the normal journal into an explicit Quest Board. A player browses offers, inspects one quest and joins it. The default is one running normal quest, so the current objective remains obvious and objective-interest indexing remains narrow.
+
+## Home
+
+The home screen presents the player's real Minecraft head and summary plus Current Quest, Available Quests, Completed/History, Skills and Help. Legacy multi-active profiles receive an explicit overflow state instead of silent cancellation.
+
+## Available Quests
+
+Daily and Weekly offers are deterministic for a player/period/server seed and still respect weighted pools, category/rarity mix and recent-history exclusion. Milestones are derived from registry/eligibility/prerequisite state. Cards show explicit states such as Available, Active, Ready to Claim, Completed, Locked, Period Limit Reached, Active Slot Occupied and Expired.
+
+Join is a guarded next-tick GUI action. The authoritative service rechecks profile identity, online state, current definition, period, eligibility, pool state, active limit, same-period duplicate use and participation budget before inserting the assignment.
+
+## Current Quest
+
+A single active assignment opens directly to details. Progress, objectives, rewards, relevant skill context, claim state and guarded abandon are shown without a repeating redraw scheduler. Completing/cancelling/expiring the quest causes profile reindexing so inactive objectives stop receiving gameplay contributions.
+
+## Abandon
+
+Abandon requires explicit confirmation. Active progress is lost. By default the persisted assignment continues to count toward period participation budget and the same rotating quest cannot be rejoined during that period.
+
+## Skills
+
+PlexonSkills is optional. When unavailable the UI says so; while the provider profile is not ready it shows a loading state; when ready it renders total/individual skill levels and progress. Skill context is informational and does not silently create new eligibility requirements.
+
+## Completed / History
+
+History remains asynchronous and paginated. Async completion validates that the exact inventory holder is still open before final render, preventing stale updates to a replacement menu.
+
+## Compatibility
+
+Tracking remains compatible. Reroll commands are retained only as a deprecation/redirect surface to Available Quests. Existing 4.1 assignments and frozen snapshots remain readable. Administrator/manual assignment surfaces remain separate from normal player participation.
+''')
+
+          phase3 = read('docs/PHASE3_PLAYER_UX.md')
+          phase3_note = '''# 4.2 supersession note
+
+The 4.0/4.1 Phase 3 journal documented below is retained as historical design context. PlexonQuests 4.2 supersedes its normal-player assignment/discovery flow with the explicit join-based Quest Board documented in [`PLAYER_UX_4.2.md`](PLAYER_UX_4.2.md). Existing 4.1 persistence and transaction authorities remain compatible.
+
+---
+
+'''
+          if not phase3.startswith('# 4.2 supersession note'):
+              write('docs/PHASE3_PLAYER_UX.md', phase3_note + phase3)
+
+          performance = read('docs/PERFORMANCE.md')
+          perf_note = '''# PlexonQuests 4.2 participation scaling note
+
+4.2 preserves shared interest-gated listeners and narrows normal per-player objective interest through explicit participation: no joined quest means no normal objective candidates; one joined quest means only that quest's normal objectives are indexed. No per-player/per-quest listener, scheduler, synchronous gameplay DB read or repeating GUI redraw was added. Live Spark results are a separate deployment-time evidence boundary and must not be inferred from CI.
+
+---
+
+'''
+          if not performance.startswith('# PlexonQuests 4.2 participation scaling note'):
+              write('docs/PERFORMANCE.md', perf_note + performance)
+
+          write('docs/MIGRATION_4.1.0_TO_4.2.0.md', '''# Migrating PlexonQuests 4.1.0 -> 4.2.0
+
+## Before upgrade
+
+1. Back up `plugins/PlexonQuests/`, especially the SQLite database and YAML configuration.
+2. Record the current `v4.1.0` JAR/checksum for rollback.
+3. Stop the server before replacing the plugin JAR.
+
+Rollback baseline: `v4.1.0` / `3b0082bc181b3765e7cdb2bf4e9ce6c72206b896` / `PlexonQuests-4.1.0.jar` SHA-256 `acfcf34a829d5ff19ee1a4fa356129a121304c8b1d4473efb7471670683fa22f`.
+
+## Behavior change
+
+PlexonQuests 4.2 no longer automatically starts normal quests. Players choose a quest from `/quests`, and only one normal quest runs at a time by default.
+
+Daily/Weekly slot settings are retained as period participation budgets. Existing 4.1 active assignments are **not** cancelled. If a player has more active assignments than the new limit, the profile enters legacy overflow: existing assignments remain usable/claimable, but the player cannot join a new normal quest until the active count is within policy.
+
+Completed-but-unclaimed assignments do not consume the active runtime slot. Cancelling/abandoning a rotating quest still consumes period participation by default, and the same quest cannot be rejoined in that period.
+
+## Configuration
+
+Schema version remains 1. New sections are `participation`, `catalog`, and `skills-display`. Existing assignment/slot keys remain valid and become the Daily/Weekly participation-budget source.
+
+`menus.yml` advances from layout 3 to layout 4. Exact bundled v3 defaults are backed up and replaced. Customized old menu files are backed up and preserved; the migration does not blindly overwrite administrator presentation edits.
+
+## PlexonSkills
+
+PlexonSkills is an optional soft dependency. Missing, disabled, incompatible or not-yet-ready skills data degrades only the Skills presentation. It must not prevent PlexonQuests from enabling and 4.2 does not add skill-level eligibility gates implicitly.
+
+## Rerolls
+
+Reroll configuration/API compatibility remains, but the normal player UX no longer needs rerolls because players choose an offer directly. `/quests reroll` redirects to Available Quests.
+
+## Verification after upgrade
+
+- confirm plugin startup/diagnostics are clean;
+- open `/quests` and verify Current/Available/Completed/Skills routes;
+- join one quest and confirm a second join is rejected;
+- verify progress only on the joined quest;
+- complete/claim or abandon and confirm interest cleanup;
+- reconnect and verify assignment/period usage reconstruction;
+- verify legacy multi-active profiles remain non-destructive if present;
+- verify PlexonSkills available/loading/unavailable UI as applicable.
+
+Live runtime/Spark certification is deployment evidence and is not implied by GitHub CI.
+''')
+
+          changelog = read('CHANGELOG.md')
+          entry = '''## [4.2.0] - 2026-09-12
+
+- Replaced automatic normal Daily/Weekly/Milestone starts with an explicit join-based Quest Board.
+- Added deterministic offer catalogs that retain weighted pools, category/rarity constraints and recent-history exclusion without creating assignments during browsing.
+- Added one-active-normal-quest participation policy by default, period-budget enforcement, same-period duplicate protection, guarded abandonment and non-destructive legacy overflow handling.
+- Reused persisted assignment rows to reconstruct period participation; no new participation table/schema was required.
+- Preserved shared interest-gated listeners so players with no joined quest have no normal objective candidates and joined players index only active quest objectives.
+- Redesigned `/quests` around Current, Available, Completed/History, Skills and Help with a real player head and exact-holder asynchronous rendering guards.
+- Added optional PlexonSkills public-API/service integration with unavailable/loading/ready states and no implicit skill eligibility requirements.
+- Retained reroll/tracking/admin/API compatibility while removing reroll clutter from normal player UX.
+- Advanced `menus.yml` to layout 4, honored configured filler material, and made migration preserve customized menu files.
+- Updated stable rollback metadata to `v4.1.0` / `3b0082bc181b3765e7cdb2bf4e9ce6c72206b896`.
+
+'''
+          if '## [4.2.0]' not in changelog:
+              changelog = changelog.replace('## [Unreleased]\n\n', '## [Unreleased]\n\n' + entry, 1)
+              write('CHANGELOG.md', changelog)
+
+          # More behavioral coverage: participation reconstruction/active-slot semantics and skills snapshot states.
+          write('src/test/java/com/zpkdxgames/plexonquests/service/QuestParticipationModelTest.java', '''package com.zpkdxgames.plexonquests.service;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import com.zpkdxgames.plexonquests.TestFixtures;
+import com.zpkdxgames.plexonquests.quest.CompletionMode;
+import com.zpkdxgames.plexonquests.quest.QuestAssignment;
+import com.zpkdxgames.plexonquests.quest.QuestScope;
+import java.time.Instant;
+import java.util.List;
+import java.util.UUID;
+import org.junit.jupiter.api.Test;
+
+class QuestParticipationModelTest {
+    @Test
+    void completedQuestFreesRuntimeSlotButStillConsumesPeriodBudget() {
+        UUID playerId = UUID.randomUUID();
+        QuestAssignment assignment = QuestAssignment.create(
+                playerId, TestFixtures.quest("daily-one", CompletionMode.ALL, 1L),
+                "daily", "daily:test", Instant.now(), Instant.now().plusSeconds(3600));
+        PlayerProfile profile = profile(playerId, List.of(assignment));
+        assertEquals(1, profile.activeAssignments().size());
+        assertEquals(1, profile.periodParticipationCount(QuestScope.DAILY, "daily:test"));
+
+        assertTrue(assignment.forceComplete(Instant.now()));
+        assertTrue(profile.activeAssignments().isEmpty());
+        assertEquals(1, profile.periodParticipationCount(QuestScope.DAILY, "daily:test"));
+    }
+
+    @Test
+    void cancelledQuestRemainsPartOfPeriodParticipationHistory() {
+        UUID playerId = UUID.randomUUID();
+        QuestAssignment assignment = QuestAssignment.create(
+                playerId, TestFixtures.quest("daily-two", CompletionMode.ALL, 5L),
+                "daily", "daily:test", Instant.now(), Instant.now().plusSeconds(3600));
+        PlayerProfile profile = profile(playerId, List.of(assignment));
+        assertTrue(assignment.cancel());
+        assertTrue(profile.activeAssignments().isEmpty());
+        assertEquals(1, profile.periodParticipationCount(QuestScope.DAILY, "daily:test"));
+    }
+
+    @Test
+    void legacyMultipleActiveAssignmentsArePreservedByProfileModel() {
+        UUID playerId = UUID.randomUUID();
+        QuestAssignment first = QuestAssignment.create(
+                playerId, TestFixtures.quest("legacy-one", CompletionMode.ALL, 5L),
+                "daily", "daily:test", Instant.now(), Instant.now().plusSeconds(3600));
+        QuestAssignment second = QuestAssignment.create(
+                playerId, TestFixtures.quest("legacy-two", CompletionMode.ALL, 5L),
+                "daily", "daily:test", Instant.now(), Instant.now().plusSeconds(3600));
+        PlayerProfile profile = profile(playerId, List.of(first, second));
+        assertEquals(2, profile.activeAssignments().size());
+        assertEquals(2, profile.periodParticipationCount(QuestScope.DAILY, "daily:test"));
+    }
+
+    private static PlayerProfile profile(UUID playerId, List<QuestAssignment> assignments) {
+        return new PlayerProfile(playerId, "Player", FeedbackPreferences.defaults(), null, 0L, assignments);
+    }
+}
+''')
+
+          write('src/test/java/com/zpkdxgames/plexonquests/integration/skills/PlayerSkillsSnapshotTest.java', '''package com.zpkdxgames.plexonquests.integration.skills;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.util.List;
+import org.bukkit.Material;
+import org.junit.jupiter.api.Test;
+
+class PlayerSkillsSnapshotTest {
+    @Test
+    void unavailableProviderIsSafeAndEmpty() {
+        PlayerSkillsSnapshot snapshot = PlayerSkillsSnapshot.unavailable();
+        assertFalse(snapshot.available());
+        assertFalse(snapshot.ready());
+        assertTrue(snapshot.skills().isEmpty());
+    }
+
+    @Test
+    void presentButNotReadyProviderUsesLoadingState() {
+        PlayerSkillsSnapshot snapshot = PlayerSkillsSnapshot.loading();
+        assertTrue(snapshot.available());
+        assertFalse(snapshot.ready());
+        assertEquals(0, snapshot.totalLevel());
+    }
+
+    @Test
+    void readySnapshotFindsSkillCaseInsensitively() {
+        SkillSnapshot mining = new SkillSnapshot("MINING", "Mining", Material.IRON_PICKAXE, 12, 345L, 500L, 0.69D);
+        PlayerSkillsSnapshot snapshot = new PlayerSkillsSnapshot(true, true, 12, List.of(mining));
+        assertTrue(snapshot.ready());
+        assertEquals(12, snapshot.skill("mining").orElseThrow().level());
+        assertTrue(snapshot.skill(null).isEmpty());
+    }
+}
+''')
+
+          # Strengthen architecture regression around the release-hygiene requirements.
+          ux_path = Path('src/test/java/com/zpkdxgames/plexonquests/gui/player/Phase3JournalUxArchitectureTest.java')
+          ux = ux_path.read_text(encoding='utf-8')
+          if 'menuLayoutFourUsesConfiguredFiller' not in ux:
+              insert = '''
+    @Test
+    void menuLayoutFourUsesConfiguredFiller() throws IOException {
+        String journal = Files.readString(JOURNAL);
+        String configManager = Files.readString(Path.of(
+                "src/main/java/com/zpkdxgames/plexonquests/config/ConfigManager.java"));
+        String menus = Files.readString(Path.of("src/main/resources/menus.yml"));
+        assertTrue(configManager.contains("CURRENT_MENU_LAYOUT = 4"));
+        assertTrue(configManager.contains("BUNDLED_MENU_LAYOUT_3_SHA256"));
+        assertTrue(journal.contains("menus().string(\"common.filler.material\""));
+        assertTrue(menus.contains("layout-version: 4"));
+    }
+'''
+              ux = ux.rsplit('}', 1)[0] + insert + '}\n'
+              ux_path.write_text(ux, encoding='utf-8')
+
+          # Delete the one-shot workflow from the stable candidate itself.
+          Path('.github/workflows/agent-finalize-4.2.yml').unlink()
+          PY
+
+      - name: Validate patch shape
+        run: |
+          git diff --check
+          grep -F 'CURRENT_MENU_LAYOUT = 4' src/main/java/com/zpkdxgames/plexonquests/config/ConfigManager.java
+          grep -F 'layout-version: 4' src/main/resources/menus.yml
+          grep -F "ROLLBACK_TAG: 'v4.1.0'" .github/workflows/build.yml .github/workflows/release.yml
+          test -s .release/RELEASE_NOTES_4.2.0.md
+          test -s docs/MIGRATION_4.1.0_TO_4.2.0.md
+
+      - name: Commit final stable candidate
+        run: |
+          git config user.name 'Tonim'
+          git config user.email '99552287+ZpkDxGames@users.noreply.github.com'
+          git add -A
+          git commit -m 'Finalize 4.2 stable release candidate'
+          git push origin HEAD:feature/4.2.0-joined-quest-board
