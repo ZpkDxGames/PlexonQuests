@@ -719,7 +719,7 @@ public final class Phase2JournalService implements Listener {
         nav(holder, 0, Material.COMPASS, "Home", JournalView.HOME, selected, this::openOverview);
         nav(holder, 1, Material.GOLD_INGOT, "Current", JournalView.ACTIVE, selected, this::openActive);
         nav(holder, 2, Material.LIME_CONCRETE, "Available", JournalView.ELIGIBLE, selected, p -> openAvailable(p, 0, null));
-        item(holder, 4, Material.PLAYER_HEAD, "<aqua><bold>Quest Board</bold>", List.of("<dark_gray>PlexonQuests 4.2"), true, null);
+        item(holder, 4, Material.COMMAND_BLOCK, "<aqua><bold>Quest Board</bold>", List.of("<dark_gray>PlexonQuests 4.2"), true, null);
         nav(holder, 6, Material.KNOWLEDGE_BOOK, "Completed", JournalView.COMPLETED, selected, this::openCompleted);
         nav(holder, 7, Material.EXPERIENCE_BOTTLE, "Skills", JournalView.HELP, selected, this::openStatistics);
         nav(holder, 8, Material.PAPER, "Help", JournalView.HELP, selected, this::openHelp);
