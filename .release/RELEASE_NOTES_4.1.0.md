@@ -15,6 +15,7 @@ PlexonQuests 4.1.0 is the final stable full-revamp release for Paper 26.2 and Ja
 - Travel/play-time sampling skips square-root work for stationary and rejected outlier deltas.
 - GUI click debounce uses a main-thread HashMap rather than a concurrent map and relies on the centralized click router for semantic action validation.
 - Progress remains in-memory on the primary thread while persistence stays on the bounded single-writer SQLite/WAL path.
+- No repeating GUI refresh task or full quest-registry scan was added to the player hot path.
 
 ## Compatibility
 
