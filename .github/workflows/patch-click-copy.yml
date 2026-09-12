@@ -1,0 +1,24 @@
+name: Patch click copy
+on: push
+permissions:
+  contents: write
+jobs:
+  patch:
+    if: github.ref == 'refs/heads/revamp/4.1.0-full-standard'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: revamp/4.1.0-full-standard
+      - name: Patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -c 'from pathlib import Path; p=Path("src/main/java/com/zpkdxgames/plexonquests/gui/QuestItemRenderer.java"); s=p.read_text(); old="        output.add(text.parse(firstLine));\n        if (assignment.state() == AssignmentState.ACTIVE\n                && assignment.definition().scope().rotating()\n                && configs.snapshot().settings().rerolls().enabled()\n                && player.hasPermission(\"plexonquests.reroll\")) {\n            output.add(text.parse(\"<light_purple>Shift-left-click <gray>reroll\"));\n        }\n        return List.copyOf(output);"; new="        output.add(text.parse(firstLine));\n        return List.copyOf(output);"; assert s.count(old)==1, s.count(old); p.write_text(s.replace(old,new,1))'
+          git diff --check
+          git rm .github/workflows/patch-click-copy.yml
+          git config user.name Tonim
+          git config user.email 99552287+ZpkDxGames@users.noreply.github.com
+          git add src/main/java/com/zpkdxgames/plexonquests/gui/QuestItemRenderer.java
+          git commit -m 'Align quest-card copy with supported click policy'
+          git push origin HEAD:revamp/4.1.0-full-standard
