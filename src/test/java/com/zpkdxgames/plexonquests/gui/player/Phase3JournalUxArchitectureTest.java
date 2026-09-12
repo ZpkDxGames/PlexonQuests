@@ -121,7 +121,8 @@ class Phase3JournalUxArchitectureTest {
         String menus = Files.readString(Path.of("src/main/resources/menus.yml"));
         assertTrue(configManager.contains("CURRENT_MENU_LAYOUT = 4"));
         assertTrue(configManager.contains("BUNDLED_MENU_LAYOUT_3_SHA256"));
-        assertTrue(journal.contains("menus().string(\"common.filler.material\""));
+        assertTrue(journal.contains("\"common.filler.material\""));
+        assertTrue(journal.contains("private ItemStack filler()"));
         assertTrue(menus.contains("layout-version: 4"));
     }
 }
