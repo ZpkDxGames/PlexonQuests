@@ -206,12 +206,6 @@ public final class QuestItemRenderer {
             firstLine += " <dark_gray>• <aqua>Right-click <gray>" + (pinned ? "unpin" : "pin");
         }
         output.add(text.parse(firstLine));
-        if (assignment.state() == AssignmentState.ACTIVE
-                && assignment.definition().scope().rotating()
-                && configs.snapshot().settings().rerolls().enabled()
-                && player.hasPermission("plexonquests.reroll")) {
-            output.add(text.parse("<light_purple>Shift-left-click <gray>reroll"));
-        }
         return List.copyOf(output);
     }
 
