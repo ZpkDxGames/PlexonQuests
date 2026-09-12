@@ -20,46 +20,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 <<'PY'
-          from pathlib import Path
-
-          path = Path('src/main/java/com/zpkdxgames/plexonquests/gui/MenuService.java')
-          s = path.read_text()
-
-          old = '''                    text.parse("<gray>Rewards <white>" + entry.rewardSummary()),'''
-          new = '''                    text.parse("<gray>Rewards <white>" + historyRewardSummary(entry.rewardSummary())),'''
-          if s.count(old) != 1:
-              raise SystemExit('legacy history reward rendering marker not found exactly once')
-          s = s.replace(old, new, 1)
-
-          old = '''    private List<Component> rewardLines(QuestAssignment assignment) {
-              return assignment.definition().rewards().entries().stream()
-                      .map(reward -> text.parse("<dark_gray>• <gray><reward>", Map.of("reward", reward.display())))
-                      .toList();
-          }
-'''
-          new = '''    private List<Component> rewardLines(QuestAssignment assignment) {
-              return assignment.definition().rewards().entries().stream()
-                      .map(reward -> text.parse(
-                              null,
-                              "<dark_gray>• <reward>",
-                              Map.of(),
-                              Map.of("reward", text.parse(reward.display()))))
-                      .toList();
-          }
-
-          private static String historyRewardSummary(String encoded) {
-              if (encoded == null || encoded.isBlank()) return "Claimed";
-              return encoded
-                      .replaceFirst("^[A-Za-z0-9_-]+=", "")
-                      .replaceAll(",[A-Za-z0-9_-]+=", " <dark_gray>+ ");
-          }
-'''
-          if s.count(old) != 1:
-              raise SystemExit('legacy rewardLines block not found exactly once')
-          s = s.replace(old, new, 1)
-          path.write_text(s)
-          PY
+          python3 -c 'from pathlib import Path; p=Path("src/main/java/com/zpkdxgames/plexonquests/gui/MenuService.java"); s=p.read_text(); old="                    text.parse(\"<gray>Rewards <white>\" + entry.rewardSummary()),"; new="                    text.parse(\"<gray>Rewards <white>\" + historyRewardSummary(entry.rewardSummary())),"; assert s.count(old)==1, s.count(old); p.write_text(s.replace(old,new,1))'
+          python3 -c 'from pathlib import Path; p=Path("src/main/java/com/zpkdxgames/plexonquests/gui/MenuService.java"); s=p.read_text(); old="    private List<Component> rewardLines(QuestAssignment assignment) {\n        return assignment.definition().rewards().entries().stream()\n                .map(reward -> text.parse(\"<dark_gray>• <gray><reward>\", Map.of(\"reward\", reward.display())))\n                .toList();\n    }\n"; new="    private List<Component> rewardLines(QuestAssignment assignment) {\n        return assignment.definition().rewards().entries().stream()\n                .map(reward -> text.parse(\n                        null,\n                        \"<dark_gray>• <reward>\",\n                        Map.of(),\n                        Map.of(\"reward\", text.parse(reward.display()))))\n                .toList();\n    }\n\n    private static String historyRewardSummary(String encoded) {\n        if (encoded == null || encoded.isBlank()) return \"Claimed\";\n        return encoded\n                .replaceFirst(\"^[A-Za-z0-9_-]+=\", \"\")\n                .replaceAll(\",[A-Za-z0-9_-]+=\", \" <dark_gray>+ \" );\n    }\n"; assert s.count(old)==1, s.count(old); p.write_text(s.replace(old,new,1))'
           git diff --check
       - name: Commit sweep
         shell: bash
