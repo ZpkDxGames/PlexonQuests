@@ -101,9 +101,14 @@ public final class TextService {
     }
 
     public Component message(String path, Map<String, String> placeholders) {
+        return message(path, placeholders, Map.of());
+    }
+
+    public Component message(
+            String path, Map<String, String> placeholders, Map<String, Component> components) {
         String prefix = configs.snapshot().messages().string("prefix", "");
         String template = configs.snapshot().messages().string(path, "<red>Missing message: " + path);
-        return parse(prefix).append(parse(null, template, placeholders, Map.of()));
+        return parse(prefix).append(parse(null, template, placeholders, components));
     }
 
     public Component rawMessage(String path, Map<String, String> placeholders) {
@@ -135,15 +140,21 @@ public final class TextService {
         return color;
     }
 
-    public Component progressBar(double percentage) {
+    public String progressBarMarkup(double percentage) {
         int segments = Math.max(1, Math.min(30, configs.snapshot().menus().integer("progress.segments", 10)));
         String filled = configs.snapshot().menus().string("progress.filled-character", "▰");
         String empty = configs.snapshot().menus().string("progress.empty-character", "▱");
         String emptyColor = configs.snapshot().menus().string("progress.empty-color", "#4B5563");
-        int count = (int) Math.floor(Math.max(0D, Math.min(100D, percentage)) * segments / 100D);
-        String template = "<" + progressColor(percentage) + ">" + filled.repeat(count)
+        double clamped = Math.max(0D, Math.min(100D, percentage));
+        int count = (int) Math.floor(clamped * segments / 100D);
+        if (clamped > 0D && count == 0) count = 1;
+        if (clamped >= 100D) count = segments;
+        return "<" + progressColor(clamped) + ">" + filled.repeat(count)
                 + "<" + emptyColor + ">" + empty.repeat(segments - count);
-        return parse(template);
+    }
+
+    public Component progressBar(double percentage) {
+        return parse(progressBarMarkup(percentage));
     }
 
     public String formatNumber(long value) {

@@ -179,6 +179,9 @@ public final class CoreObjectiveListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onPlace(BlockPlaceEvent event) {
+        if (!progress.anyInterested(ObjectiveType.PLACE_BLOCK)) {
+            return;
+        }
         blockProcessor.placeBlock(event.getPlayer(), event.getBlockPlaced().getType());
     }
 
@@ -193,6 +196,9 @@ public final class CoreObjectiveListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void onDeath(EntityDeathEvent event) {
+        if (!progress.anyInterested(ObjectiveType.KILL_ENTITY)) {
+            return;
+        }
         Player killer = event.getEntity().getKiller();
         if (killer == null
                 || !progress.interested(killer, ObjectiveType.KILL_ENTITY, event.getEntity().getType())) {
@@ -213,6 +219,9 @@ public final class CoreObjectiveListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onDamage(EntityDamageByEntityEvent event) {
+        if (!progress.anyInterested(ObjectiveType.DAMAGE_ENTITY)) {
+            return;
+        }
         Player player = damagingPlayer(event);
         if (player == null || !(event.getEntity() instanceof LivingEntity living)) {
             return;
@@ -236,6 +245,9 @@ public final class CoreObjectiveListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onFish(PlayerFishEvent event) {
+        if (!progress.anyInterested(ObjectiveType.CATCH_FISH)) {
+            return;
+        }
         if (event.getState() != PlayerFishEvent.State.CAUGHT_FISH || event.getCaught() == null) {
             return;
         }
@@ -279,6 +291,9 @@ public final class CoreObjectiveListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onCraft(CraftItemEvent event) {
+        if (!progress.anyInterested(ObjectiveType.CRAFT_ITEM)) {
+            return;
+        }
         if (!(event.getWhoClicked() instanceof Player player) || event.getRecipe() == null) {
             return;
         }
@@ -301,6 +316,9 @@ public final class CoreObjectiveListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onFurnaceExtract(FurnaceExtractEvent event) {
+        if (!progress.anyInterested(ObjectiveType.SMELT_ITEM)) {
+            return;
+        }
         Player player = event.getPlayer();
         if (!progress.interested(player, ObjectiveType.SMELT_ITEM, event.getItemType())) {
             return;
@@ -311,6 +329,9 @@ public final class CoreObjectiveListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onEnchant(EnchantItemEvent event) {
+        if (!progress.anyInterested(ObjectiveType.ENCHANT_ITEM)) {
+            return;
+        }
         Player player = event.getEnchanter();
         Material material = event.getItem().getType();
         if (!progress.interested(player, ObjectiveType.ENCHANT_ITEM, material)) {
@@ -322,6 +343,9 @@ public final class CoreObjectiveListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onBrewingExtract(InventoryClickEvent event) {
+        if (!progress.anyInterested(ObjectiveType.BREW_POTION)) {
+            return;
+        }
         if (!(event.getWhoClicked() instanceof Player player)
                 || !progress.interested(player, ObjectiveType.BREW_POTION)
                 || !(event.getView().getTopInventory() instanceof BrewerInventory)
@@ -348,6 +372,9 @@ public final class CoreObjectiveListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void onWorldChange(PlayerChangedWorldEvent event) {
+        if (!progress.anyInterested(ObjectiveType.VISIT_WORLD)) {
+            return;
+        }
         Player player = event.getPlayer();
         if (!progress.interested(player, ObjectiveType.VISIT_WORLD)) {
             return;
@@ -357,6 +384,9 @@ public final class CoreObjectiveListener implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void onAdvancement(PlayerAdvancementDoneEvent event) {
+        if (!progress.anyInterested(ObjectiveType.COMPLETE_ADVANCEMENT)) {
+            return;
+        }
         Player player = event.getPlayer();
         if (!progress.interested(player, ObjectiveType.COMPLETE_ADVANCEMENT)) {
             return;

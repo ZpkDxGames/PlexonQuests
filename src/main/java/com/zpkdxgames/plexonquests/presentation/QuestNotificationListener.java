@@ -37,7 +37,9 @@ public final class QuestNotificationListener implements Listener {
         assignment(event.getPlayer().getUniqueId(), event.assignmentId()).flatMap(assignment ->
                         assignment.objective(event.objectiveId()))
                 .ifPresent(objective -> event.getPlayer().sendMessage(text.message(
-                        "quests.objective-complete", Map.of("objective", objective.definition().display()))));
+                        "quests.objective-complete",
+                        Map.of(),
+                        Map.of("objective", text.parse(objective.definition().display())))));
     }
 
     @EventHandler(priority = EventPriority.MONITOR)

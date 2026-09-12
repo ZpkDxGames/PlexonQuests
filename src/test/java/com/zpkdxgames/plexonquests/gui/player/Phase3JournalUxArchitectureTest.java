@@ -137,4 +137,16 @@ class Phase3JournalUxArchitectureTest {
         assertFalse(source.contains("menus.openReroll"));
         assertFalse(source.contains("MenuContext.journal"));
     }
+
+    @Test
+    void journalRendersTrustedMiniMessageAndSharedProgressMarkup() throws IOException {
+        String source = Files.readString(JOURNAL);
+        assertTrue(source.contains("text.progressBarMarkup(progress.percentage())"));
+        assertTrue(source.contains("text.progressBarMarkup(total.percentage())"));
+        assertFalse(source.contains("progress.bar()"));
+        assertFalse(source.contains("total.bar()"));
+        assertFalse(source.contains("safe(reward.display())"));
+        assertFalse(source.contains("safe(rewardSummary("));
+        assertTrue(source.contains("reward.display()"));
+    }
 }

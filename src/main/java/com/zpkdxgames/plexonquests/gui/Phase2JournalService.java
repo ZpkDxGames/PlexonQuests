@@ -485,8 +485,8 @@ public final class Phase2JournalService implements Listener {
             ObjectiveProgress objective = objectives.get(i);
             QuestProgressPresentation progress = QuestProgressPresentation.of(objective.current(), objective.required());
             item(holder, DETAIL_OBJECTIVES.get(i), Material.TARGET,
-                    "<white><bold>" + safe(objective.definition().display()) + "</bold>", List.of(
-                            "<gray>" + progress.bar() + " <white>" + progress.percentage() + "%",
+                    "<white><bold>" + objective.definition().display() + "</bold>", List.of(
+                            text.progressBarMarkup(progress.percentage()) + " <white>" + progress.percentage() + "%",
                             "<gray>" + text.formatNumber(progress.current()) + " / " + text.formatNumber(progress.required()),
                             objective.complete() ? "<green>Complete" : "<gold>In progress"),
                     objective.complete(), null);
@@ -497,7 +497,7 @@ public final class Phase2JournalService implements Listener {
         }
         QuestProgressPresentation total = QuestProgressPresentation.of(live.displayProgress().current(), live.displayProgress().required());
         item(holder, 20, Material.COMPASS, "<gold><bold>Overall Progress</bold>", List.of(
-                "<gold>" + total.bar() + " <white>" + total.percentage() + "%",
+                text.progressBarMarkup(total.percentage()) + " <white>" + total.percentage() + "%",
                 "<gray>" + text.formatNumber(total.current()) + " / " + text.formatNumber(total.required()),
                 objectives.size() > 1 ? "<gray>Objectives <white>" + objectives.size() : ""), false, null);
         item(holder, 22, Material.TRIPWIRE_HOOK, "<yellow><bold>Requirements</bold>", prerequisiteLore(player, live.definition()), false, null);
@@ -511,7 +511,7 @@ public final class Phase2JournalService implements Listener {
         for (int i = 0; i < directRewards; i++) {
             var reward = live.definition().rewards().entries().get(i);
             item(holder, DETAIL_REWARDS.get(i), Material.CHEST, "<green><bold>Reward</bold>", List.of(
-                    "<white>" + safe(reward.display())), false, null);
+                    "<white>" + reward.display()), false, null);
         }
         if (rewardEntries.size() > DETAIL_REWARDS.size()) {
             item(holder, DETAIL_REWARDS.getLast(), Material.CHEST, "<green><bold>+" + (rewardEntries.size() - directRewards) + " more rewards</bold>", List.of(
@@ -522,13 +522,13 @@ public final class Phase2JournalService implements Listener {
         }
         item(holder, 40, stateMaterial(live.state()), assignmentStateColor(live.state()) + "<bold>" + QuestStatePresentation.label(live.state()) + "</bold>", List.of(
                 live.state() == AssignmentState.ACTIVE ? "<gray>Tracking <yellow>" + QuestStatePresentation.tracking(trackedState) : "",
-                "<gray>Reward summary <white>" + safe(rewardSummary(live.definition()))),
+                "<gray>Reward summary <white>" + rewardSummary(live.definition())),
                 live.state() == AssignmentState.COMPLETED, null);
 
         back(holder, parent);
         if (live.state() == AssignmentState.COMPLETED && player.hasPermission("plexonquests.claim")) {
             item(holder, 53, Material.EMERALD, "<green><bold>Claim Reward</bold>", List.of(
-                    "<gray>Receive <white>" + safe(rewardSummary(live.definition())),
+                    "<gray>Receive <white>" + rewardSummary(live.definition()),
                     "", "<dark_gray>Click once to claim"), true, (p, c) -> claim(p, live.id(), parent, holder));
         }
         if (live.state() == AssignmentState.ACTIVE
@@ -551,7 +551,7 @@ public final class Phase2JournalService implements Listener {
         headerLore.add("<dark_gray>" + scopeLabel(live.definition().scope()) + " • " + safe(pretty(live.definition().category())));
         if (!live.definition().display().shortDescription().isBlank()) {
             headerLore.add("");
-            headerLore.add("<gray>" + safe(live.definition().display().shortDescription()));
+            headerLore.add("<gray>" + live.definition().display().shortDescription());
         }
         headerLore.add("");
         headerLore.add("<gray>Status " + assignmentStateColor(live.state()) + QuestStatePresentation.label(live.state()));
@@ -605,7 +605,7 @@ public final class Phase2JournalService implements Listener {
         header.add("<dark_gray>" + scopeLabel(definition.scope()) + " • " + safe(pretty(definition.category())));
         if (!definition.display().shortDescription().isBlank()) {
             header.add("");
-            header.add("<gray>" + safe(definition.display().shortDescription()));
+            header.add("<gray>" + definition.display().shortDescription());
         }
         header.add("");
         header.add("<gray>Status " + journalStateColor(state) + QuestStatePresentation.label(state));
@@ -613,7 +613,7 @@ public final class Phase2JournalService implements Listener {
                 state == JournalState.AVAILABLE, null);
 
         List<String> objectiveLore = definition.objectives().values().stream().limit(6)
-                .map(o -> "<gray>• <white>" + safe(o.display()) + " <dark_gray>×</dark_gray><white>" + text.formatNumber(o.amount()))
+                .map(o -> "<gray>• <white>" + o.display() + " <dark_gray>×</dark_gray><white>" + text.formatNumber(o.amount()))
                 .toList();
         List<String> objectives = new ArrayList<>(objectiveLore);
         if (definition.objectives().size() > 6) objectives.add("<gray>+" + (definition.objectives().size() - 6) + " more");
@@ -706,11 +706,14 @@ public final class Phase2JournalService implements Listener {
     public void onClick(InventoryClickEvent event) {
         if (!(event.getView().getTopInventory().getHolder() instanceof Holder holder)) return;
         event.setCancelled(true);
-        if (!(event.getWhoClicked() instanceof Player player)) return;
+        if (!(event.getWhoClicked() instanceof Player player)
+                || !MenuInteractionRouter.supportsAction(event.getClick())) return;
         int slot = event.getRawSlot();
         if (slot < 0 || slot >= event.getView().getTopInventory().getSize()) return;
         Action action = holder.actions.get(slot);
-        if (action != null && holder.acceptInteraction()) action.run(player, event.getClick());
+        if (action == null || !holder.acceptInteraction()) return;
+        ClickType click = event.getClick();
+        MenuInteractionRouter.defer(plugin, player, holder, () -> action.run(player, click));
     }
 
     @EventHandler(priority = EventPriority.HIGHEST)
@@ -746,13 +749,13 @@ public final class Phase2JournalService implements Listener {
         List<String> lore = new ArrayList<>();
         lore.add("<dark_gray>" + scopeLabel(assignment.definition().scope()) + " • " + safe(pretty(assignment.definition().category())));
         lore.add("");
-        lore.add("<gray>" + safe(primaryObjective(assignment)));
+        lore.add("<gray>" + primaryObjective(assignment));
         if (assignment.objectives().size() > 1) lore.add("<gray>+" + (assignment.objectives().size() - 1) + " more");
-        lore.add("<gold>" + progress.bar() + " <white>" + progress.percentage() + "%");
+        lore.add(text.progressBarMarkup(progress.percentage()) + " <white>" + progress.percentage() + "%");
         lore.add("<gray>" + text.formatNumber(progress.current()) + " / " + text.formatNumber(progress.required()));
         lore.add("<gray>Status " + assignmentStateColor(assignment.state()) + QuestStatePresentation.label(assignment.state()));
         if (assignment.state() == AssignmentState.ACTIVE) lore.add("<gray>Tracking <yellow>" + QuestStatePresentation.tracking(trackedState));
-        lore.add("<gray>Reward <white>" + safe(rewardSummary(assignment.definition())));
+        lore.add("<gray>Reward <white>" + rewardSummary(assignment.definition()));
         lore.add("");
         lore.add(assignment.state() == AssignmentState.COMPLETED ? "<green>Click to view & claim" : "<dark_gray>Click to view details");
         return items.create(assignment.definition().display().icon().material(), text.parse(assignment.definition().display().name()),
@@ -765,13 +768,13 @@ public final class Phase2JournalService implements Listener {
         lore.add("<dark_gray>" + scopeLabel(definition.scope()) + " • " + safe(pretty(definition.category())));
         if (!definition.display().shortDescription().isBlank()) {
             lore.add("");
-            lore.add("<gray>" + safe(definition.display().shortDescription()));
+            lore.add("<gray>" + definition.display().shortDescription());
         }
         lore.add("");
         lore.add("<gray>Status " + journalStateColor(entry.state()) + QuestStatePresentation.label(entry.state()));
         lore.add("<gray>Assignment <white>" + assignmentMechanism(definition.scope()));
         if (entry.state() == JournalState.LOCKED) lore.add("<gray>Requires <white>" + safe(entry.reason()));
-        lore.add("<gray>Reward <white>" + safe(rewardSummary(definition)));
+        lore.add("<gray>Reward <white>" + rewardSummary(definition));
         lore.add("");
         lore.add("<dark_gray>Click to view details");
         return items.create(definition.display().icon().material(), text.parse(definition.display().name()), components(lore),
@@ -789,7 +792,7 @@ public final class Phase2JournalService implements Listener {
                 "<gray>Completed <white>" + safe(when),
                 entry.rewardSummary() == null || entry.rewardSummary().isBlank()
                         ? "<gray>Reward <white>Claimed"
-                        : "<gray>Reward <white>" + safe(entry.rewardSummary()))), false);
+                        : "<gray>Reward <white>" + historyRewardSummary(entry.rewardSummary()))), false);
     }
 
     private List<String> prerequisiteLore(Player player, QuestDefinition definition) {
@@ -837,7 +840,7 @@ public final class Phase2JournalService implements Listener {
     private List<String> rewardLore(QuestDefinition definition) {
         List<String> lore = new ArrayList<>();
         definition.rewards().entries().stream().limit(6)
-                .forEach(reward -> lore.add("<gray>• <white>" + safe(reward.display())));
+                .forEach(reward -> lore.add("<gray>• " + reward.display()));
         if (definition.rewards().entries().size() > 6) {
             lore.add("<gray>+" + (definition.rewards().entries().size() - 6) + " more");
         }
@@ -895,6 +898,13 @@ public final class Phase2JournalService implements Listener {
         String joined = String.join(" + ", rewards);
         int more = definition.rewards().entries().size() - rewards.size();
         return more > 0 ? joined + " +" + more + " more" : joined;
+    }
+
+    private String historyRewardSummary(String encoded) {
+        if (encoded == null || encoded.isBlank()) return "Claimed";
+        return encoded
+                .replaceFirst("^[A-Za-z0-9_-]+=", "")
+                .replaceAll(",[A-Za-z0-9_-]+=", " <dark_gray>+ ");
     }
 
     private String questName(String questId) {

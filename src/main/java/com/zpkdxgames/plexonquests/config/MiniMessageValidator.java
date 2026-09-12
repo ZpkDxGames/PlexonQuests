@@ -25,9 +25,13 @@ final class MiniMessageValidator {
             validate(quest.source() + ".display.short-description", quest.display().shortDescription(), errors);
             quest.objectives().values().forEach(objective ->
                     validate(quest.source() + ".objectives." + objective.id() + ".display", objective.display(), errors));
+            quest.rewards().entries().forEach(reward ->
+                    validate(quest.source() + ".rewards.entries." + reward.id() + ".display", reward.display(), errors));
             validate(quest.source() + ".effects.complete", quest.completeEffect(), errors);
             validate(quest.source() + ".effects.claim", quest.claimEffect(), errors);
         });
+        registry.rarities().forEach((id, rarity) ->
+                validate("rarities." + id + ".display", rarity.display(), errors));
     }
 
     private static void validate(String path, String value, List<String> errors) {

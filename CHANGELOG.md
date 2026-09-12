@@ -4,6 +4,16 @@ All notable changes to PlexonQuests are documented here.
 
 ## [Unreleased]
 
+## [4.1.0] - 2026-09-12
+
+- Final stable full-source revamp for Java 25, Paper 26.2 and PlexonCore 2.0.4.
+- Hardened premium Quest Journal GUI interaction, formatting and progress presentation.
+- Added server-wide objective-type fast rejection before detailed common-event routing while preserving per-player material/entity indexes.
+- Reduced activity-sampler CPU for stationary and rejected outlier movement.
+- Removed unnecessary concurrent-map and duplicate click-policy overhead from the compatibility GUI listener.
+- Preserved the mature quest lifecycle, economy, persistence, provenance, prerequisite, rotation, reroll, integration and transaction authorities.
+- Stable rollback baseline: `v4.0.0` (`57a235460e5e936ca931ee8d0e96b0a424f134f8`).
+
 ## [4.0.0] - Stable
 
 - Promotes the accepted Phase 2 / Phase 3 premium quest-journal line and final RC3 UX to stable `4.0.0` without changing production Java behavior after the accepted candidate.
