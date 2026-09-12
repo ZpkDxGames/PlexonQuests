@@ -1,0 +1,85 @@
+name: Apply 4.1 interaction safety patch
+
+on:
+  push:
+    branches: [revamp/4.1.0-full-standard]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: ${{ !contains(github.event.head_commit.message, '[interaction-safety-applied]') }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout revamp branch
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Apply exact source transformation
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def replace_exact(path: Path, old: str, new: str) -> None:
+              source = path.read_text(encoding="utf-8")
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f"Expected exactly one match in {path}, found {count}")
+              path.write_text(source.replace(old, new), encoding="utf-8")
+
+          listener = Path("src/main/java/com/zpkdxgames/plexonquests/gui/MenuListener.java")
+          replace_exact(
+              listener,
+              "import org.bukkit.event.player.PlayerQuitEvent;\n",
+              "import org.bukkit.event.player.PlayerQuitEvent;\nimport org.bukkit.plugin.java.JavaPlugin;\n",
+          )
+          replace_exact(
+              listener,
+              "    private final ConfigManager configs;\n",
+              "    private final JavaPlugin plugin;\n    private final ConfigManager configs;\n",
+          )
+          replace_exact(
+              listener,
+              "    public MenuListener(ConfigManager configs) {\n        this.configs = configs;\n    }\n",
+              "    public MenuListener(JavaPlugin plugin, ConfigManager configs) {\n        this.plugin = plugin;\n        this.configs = configs;\n    }\n",
+          )
+          replace_exact(
+              listener,
+              "                || UNSAFE.contains(event.getClick())\n",
+              "                || UNSAFE.contains(event.getClick())\n                || !MenuInteractionRouter.supportsAction(event.getClick())\n",
+          )
+          replace_exact(
+              listener,
+              "        if (action != null) {\n            action.execute(player, event.getClick());\n        }\n",
+              "        if (action != null) {\n            ClickType click = event.getClick();\n            MenuInteractionRouter.defer(plugin, player, holder, () -> action.execute(player, click));\n        }\n",
+          )
+
+          journal = Path("src/main/java/com/zpkdxgames/plexonquests/gui/Phase2JournalService.java")
+          replace_exact(
+              journal,
+              "        if (!(event.getWhoClicked() instanceof Player player)) return;\n        int slot = event.getRawSlot();\n        if (slot < 0 || slot >= event.getView().getTopInventory().getSize()) return;\n        Action action = holder.actions.get(slot);\n        if (action != null && holder.acceptInteraction()) action.run(player, event.getClick());\n",
+              "        if (!(event.getWhoClicked() instanceof Player player)\n                || !MenuInteractionRouter.supportsAction(event.getClick())) return;\n        int slot = event.getRawSlot();\n        if (slot < 0 || slot >= event.getView().getTopInventory().getSize()) return;\n        Action action = holder.actions.get(slot);\n        if (action == null || !holder.acceptInteraction()) return;\n        ClickType click = event.getClick();\n        MenuInteractionRouter.defer(plugin, player, holder, () -> action.run(player, click));\n",
+          )
+
+          plugin = Path("src/main/java/com/zpkdxgames/plexonquests/PlexonQuestsPlugin.java")
+          replace_exact(
+              plugin,
+              "        manager.registerEvents(new MenuListener(configs), this);\n",
+              "        manager.registerEvents(new MenuListener(this, configs), this);\n",
+          )
+
+          workflow = Path(".github/workflows/revamp-apply-interaction-safety.yml")
+          workflow.unlink()
+
+      - name: Commit transformed source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "fix: harden GUI interaction dispatch [interaction-safety-applied]"
+          git push origin HEAD:revamp/4.1.0-full-standard
