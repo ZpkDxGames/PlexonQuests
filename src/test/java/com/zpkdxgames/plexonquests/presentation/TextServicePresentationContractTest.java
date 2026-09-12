@@ -6,6 +6,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.zpkdxgames.plexonquests.PlexonQuestsPlugin;
 import com.zpkdxgames.plexonquests.config.ConfigManager;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
@@ -15,6 +17,9 @@ import org.mockbukkit.mockbukkit.MockBukkit;
 import org.mockbukkit.mockbukkit.ServerMock;
 
 class TextServicePresentationContractTest {
+    private static final Path QUEST_ITEM_RENDERER = Path.of(
+            "src/main/java/com/zpkdxgames/plexonquests/gui/QuestItemRenderer.java");
+
     private ServerMock server;
 
     @AfterEach
@@ -50,6 +55,16 @@ class TextServicePresentationContractTest {
         String plain = PlainTextComponentSerializer.plainText().serialize(rendered);
         assertEquals("2,500 experience points", plain);
         assertFalse(plain.contains("<aqua>"));
+    }
+
+    @Test
+    void configuredObjectiveMiniMessageUsesComponentPlaceholdersInCompatibilityRenderer() throws Exception {
+        String source = Files.readString(QUEST_ITEM_RENDERER);
+
+        assertFalse(source.contains("\"objective_name\", objective.definition().display()"));
+        assertFalse(source.contains("\"name\", objective.definition().display()"));
+        assertTrue(source.contains("\"objective_name\", text.parse(objective.definition().display())"));
+        assertTrue(source.contains("Map.of(\"name\", text.parse(objective.definition().display()))"));
     }
 
     private TextService service() throws Exception {
