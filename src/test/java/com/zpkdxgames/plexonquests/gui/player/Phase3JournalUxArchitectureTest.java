@@ -81,6 +81,17 @@ class Phase3JournalUxArchitectureTest {
     }
 
     @Test
+    void directCurrentQuestBackReturnsHomeWithoutBreakingLegacyListBack() throws IOException {
+        String source = Files.readString(JOURNAL);
+        assertTrue(source.contains(
+                "openDetails(player, active.getFirst(), JournalNavigationContext.home())"));
+        assertFalse(source.contains(
+                "openDetails(player, active.getFirst(), JournalNavigationContext.active(0, scope))"));
+        assertTrue(source.contains(
+                "openDetails(p, assignment, JournalNavigationContext.active(actualPage, scope))"));
+    }
+
+    @Test
     void rotationNoLongerAutoCreatesNormalAssignments() throws IOException {
         String source = Files.readString(ROTATION);
         assertFalse(source.contains("assignments.add(player, profile"));

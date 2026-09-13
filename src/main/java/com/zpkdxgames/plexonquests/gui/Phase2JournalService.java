@@ -211,7 +211,7 @@ public final class Phase2JournalService implements Listener {
                 .filter(a -> scope == null || a.definition().scope() == scope)
                 .toList();
         if (active.size() == 1 && !participation.legacyOverflow(profile)) {
-            openDetails(player, active.getFirst(), JournalNavigationContext.active(0, scope));
+            openDetails(player, active.getFirst(), JournalNavigationContext.home());
             return;
         }
         Holder holder = create(JournalNavigationContext.active(page, scope), "<gold><bold>Current Quest</bold>");
